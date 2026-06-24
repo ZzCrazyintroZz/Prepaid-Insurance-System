@@ -35,9 +35,10 @@ const CAT_MAP = {
   '54810010':'ค่าโฆษณา/ส่งเสริมการขาย'
 };
 function catOf(item) {
-  const name = String(item[COL.GLName] || '').trim();
+  // Support both old format (COL keys) and new format (camelCase from DataReader)
+  const name = String(item[COL.GLName] || item.glName || '').trim();
   if (name) return name;
-  const gl = String(item[COL.ExpenseGL] || '').trim();
+  const gl = String(item[COL.ExpenseGL] || item.expenseGL || '').trim();
   return CAT_MAP[gl] || (gl ? 'GL ' + gl : 'อื่นๆ');
 }
 
@@ -289,28 +290,52 @@ function cacheClearDash_() {
 function getDashboard(period, force) {
   const now = new Date();
   const cut = period || (now.getFullYear() + '-' + pad2_(now.getMonth() + 1));
-  const CACHE_VER = 2;
+  const CACHE_VER = 3;
   const cacheKey = 'dash_v' + CACHE_VER + '_' + cut;
   if (!force) { const cached = cacheGet_(cacheKey); if (cached) { cached._cache = true; return cached; } }
-  const f = findData_();
-  const items = getData(f);
+
+  // Use DataReader.gs functions to fetch from published sheets
+  const items = readPaymentSystem();
+  const enriched = computePeriodCalcs(items);
+  const withAmort = computeAmortCols(enriched, cut);
+
   let sumRemain = 0, sumMonth = 0, near = 0;
-  const rows = items.map(it => {
+  const rows = withAmort.map(it => {
     const s = summarize(it, cut);
     sumRemain += s.remain; sumMonth += s.monthAmt;
     if (s.status === 'Near-End') near++;
-    return { doc: String(it[COL.DocNo] || ''), desc: String(it[COL.Desc] || ''),
-      plate: String(it[COL.Plate] || ''), gl: String(it[COL.ExpenseGL] || ''),
-      cc: String(it[COL.CC] || ''), ccName: String(it[COL.CCName] || ''),
-      io: String(it[COL.IO] || ''), cat: catOf(it),
-      start: fmtDate_(it[COL.Start]), end: fmtDate_(it[COL.End]),
-      total: s.total, accum: s.accum, remain: s.remain,
-      monthAmt: s.monthAmt, remainMonths: s.remainMonths, status: s.status };
+    return {
+      doc: String(it.docNo || ''),
+      desc: String(it.desc || ''),
+      plate: String(it.plate || ''),
+      gl: String(it.expenseGL || ''),
+      cc: String(it.cc || ''),
+      ccName: String(it.ccName || ''),
+      io: String(it.io || ''),
+      cat: catOf(it),
+      start: fmtDate_(it.start),
+      end: fmtDate_(it.end),
+      total: s.total,
+      accum: s.accum,
+      remain: s.remain,
+      monthAmt: s.monthAmt,
+      remainMonths: s.remainMonths,
+      status: s.status,
+      amortPrior: it.amortPrior,
+      amortCur: it.amortCur,
+      remainCalc: it.remainCalc
+    };
   });
-  const out = { period: cut, count: rows.length,
-    sumRemain: round2(sumRemain), sumMonth: round2(sumMonth), near,
+
+  const out = {
+    period: cut,
+    count: rows.length,
+    sumRemain: round2(sumRemain),
+    sumMonth: round2(sumMonth),
+    near,
     rows: rows,
-    diag: { dataSheet: f ? String(f.sheet.getName()) : '', headerRow: f ? f.headerRow : 0 } };
+    diag: { source: 'DataReader.gs (published sheets)', itemsCount: items.length }
+  };
   try { cachePut_(cacheKey, out, 600); } catch (e) {}
   return out;
 }
