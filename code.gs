@@ -2,6 +2,7 @@
  * ระบบตัดจ่ายค่าใช้จ่ายจ่ายล่วงหน้า (Prepaid Expense Amortization)
  * GL 11370010 — ค่าประกันภัยจ่ายล่วงหน้า | บริษัท พีทีจี โลจิสติกส์
  * Code.gs : config, menu, web app, อ่าน/เขียนข้อมูล, amortization engine
+ * v2 - Fresh project redeploy
  *************************************************************/
 
 const SS_ID = '18cw3wThMQsNk0Br3P_MNw2NdTBnF5F4zpkc7-_s8loM';
@@ -111,8 +112,8 @@ function findData_() {
   return null;
 }
 
-function getData() {
-  const f = findData_();
+function getData(f) {
+  if (!f) f = findData_();
   if (!f) return [];
   const sh = f.sheet, hr = f.headerRow;
   const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
@@ -136,7 +137,7 @@ function dataDiag() {
   let headers = '', sample = '', rawCount = 0;
   if (f) {
     headers = f.sheet.getRange(f.headerRow, 1, 1, f.sheet.getLastColumn()).getValues()[0].map(x => String(x)).join(' | ');
-    const data = getData();
+    const data = getData(f);
     rawCount = data.length;
     sample = data.length ? JSON.stringify(data[0], (k, v) => v instanceof Date ? String(v) : v) : '';
   }
@@ -162,12 +163,12 @@ function upsertRow(payload) {
   if (rowIdx === -1) {
     const arr = head.map(h => payload[h] !== undefined ? payload[h] : '');
     sh.getRange(hr + 1 + values.length, 1, 1, arr.length).setValues([arr]);
-    logAudit('ADD', payload[COL.DocNo], '', JSON.stringify(payload));
+    try { logAudit('ADD', payload[COL.DocNo], '', JSON.stringify(payload)); } catch(e) { Logger.log('Audit log failed: ' + e); }
   } else {
     const before = sh.getRange(rowIdx, 1, 1, head.length).getValues()[0];
     const arr = head.map((h, i) => payload[h] !== undefined ? payload[h] : before[i]);
     sh.getRange(rowIdx, 1, 1, arr.length).setValues([arr]);
-    logAudit('EDIT', payload[COL.DocNo], JSON.stringify(before), JSON.stringify(arr));
+    try { logAudit('EDIT', payload[COL.DocNo], JSON.stringify(before), JSON.stringify(arr)); } catch(e) { Logger.log('Audit log failed: ' + e); }
   }
   cacheClearDash_();
   return { ok: true };
@@ -183,7 +184,7 @@ function deleteRow(docNo) {
   const values = lastRow > hr ? sh.getRange(hr + 1, 1, lastRow - hr, sh.getLastColumn()).getValues() : [];
   for (let i = 0; i < values.length; i++) {
     if (String(values[i][idxDoc]).trim() === String(docNo).trim()) {
-      logAudit('DELETE', docNo, JSON.stringify(values[i]), '');
+      try { logAudit('DELETE', docNo, JSON.stringify(values[i]), ''); } catch(e) { Logger.log('Audit log failed: ' + e); }
       sh.deleteRow(hr + 1 + i);
       cacheClearDash_();
       return { ok: true };
@@ -195,7 +196,9 @@ function deleteRow(docNo) {
 function logAudit(action, key, before, after) {
   const sh = sheet_(SHEET_LOG);
   if (sh.getLastRow() === 0) sh.appendRow(['เวลา', 'ผู้ใช้', 'การกระทำ', 'อ้างอิง', 'ก่อน', 'หลัง']);
-  sh.appendRow([new Date(), Session.getActiveUser().getEmail(), action, key, before, after]);
+  const user = Session.getActiveUser();
+  const email = user ? user.getEmail() : 'Unknown';
+  sh.appendRow([new Date(), email, action, key, before, after]);
 }
 
 // ===========================================================
@@ -268,7 +271,16 @@ function cachePut_(key, obj, sec) {
   c.putAll(map, sec);
 }
 function cacheClearDash_() {
-  try { CacheService.getScriptCache().remove('dash_v2_' + new Date().getFullYear() + '-' + pad2_(new Date().getMonth() + 1) + '__n'); } catch(e) {}
+  const c = CacheService.getScriptCache();
+  const key = 'dash_v2_' + new Date().getFullYear() + '-' + pad2_(new Date().getMonth() + 1);
+  try {
+    const n = c.get(key + '__n');
+    if (n) {
+      const keysToRemove = [key + '__n'];
+      for (let i = 0; i < +n; i++) keysToRemove.push(key + '__' + i);
+      c.removeAll(keysToRemove);
+    }
+  } catch (e) {}
 }
 
 // ===========================================================
@@ -281,7 +293,7 @@ function getDashboard(period, force) {
   const cacheKey = 'dash_v' + CACHE_VER + '_' + cut;
   if (!force) { const cached = cacheGet_(cacheKey); if (cached) { cached._cache = true; return cached; } }
   const f = findData_();
-  const items = getData();
+  const items = getData(f);
   let sumRemain = 0, sumMonth = 0, near = 0;
   const rows = items.map(it => {
     const s = summarize(it, cut);
@@ -297,7 +309,7 @@ function getDashboard(period, force) {
   });
   const out = { period: cut, count: rows.length,
     sumRemain: round2(sumRemain), sumMonth: round2(sumMonth), near,
-    rows: rows, keys: DASH_KEYS,
+    rows: rows,
     diag: { dataSheet: f ? String(f.sheet.getName()) : '', headerRow: f ? f.headerRow : 0 } };
   try { cachePut_(cacheKey, out, 600); } catch (e) {}
   return out;

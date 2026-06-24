@@ -65,7 +65,8 @@ function getNextSequence_() {
   const sh = sheet_(SHEET_HIST);
   if (sh.getLastRow() < 2) return 1;
   const raw = sh.getRange(sh.getLastRow(), 2).getValue();
-  const last = (raw instanceof Date) ? 0 : (Number(raw) || 0);
+  if (raw instanceof Date) throw new Error('Export_History column B contains a Date value; expected integer sequence number');
+  const last = Number(raw) || 0;
   if (!Number.isInteger(last) || last < 0) throw new Error('Invalid sequence in Export_History col B: ' + raw);
   return last + 1;
 }
@@ -288,7 +289,13 @@ function exportReconFile(period) {
 
   // ใช้ ssToBlob_ แทน ssToXlsxBlob_ (ตัวใหม่ใช้ร่วมกันได้ทั้ง xlsx/pdf)
   const fname = 'RECON_' + CFG.prepaidGL + '_' + cut.replace('-', '') + '.xlsx';
-  const file = DriveApp.createFile(ssToBlob_(tmp.getId(), 'xlsx', fname));
+  let file;
+  try {
+    file = DriveApp.createFile(ssToBlob_(tmp.getId(), 'xlsx', fname));
+  } catch (e) {
+    try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch(e2) {}
+    throw new Error('สร้างไฟล์กระทบยอดไม่สำเร็จ: ' + e.message);
+  }
   try { DriveApp.getFileById(tmp.getId()).setTrashed(true); } catch(e) { Logger.log('Cleanup failed: ' + e); }
   return { ok: true, fileUrl: file.getUrl(), name: fname, count: recs.length,
     sumRemain: round2(sumRemain) };

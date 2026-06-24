@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prepaid Expense · Amortization System</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js" onload="window.chartJsReady = true; if (window.onChartReady) window.onChartReady();"></script>
 <style>
 /* ─── TOKENS ─── */
 :root{
@@ -1184,6 +1184,22 @@ function saveGLTarget() {
 function searchData() { _pgD.page = 1; renderData(); }
 
 /* ─── CHARTS ─── */
+/* Chart.js readiness callback + polling fallback (fix B03) */
+window.onChartReady = function() {
+  if (STATE.rows && STATE.rows.length) {
+    try { drawCharts(STATE.rows); } catch(err) { chartMsg('⚠ ' + err.message); }
+  }
+};
+// Polling fallback in case onload doesn't fire (e.g. cached script)
+(function pollChart() {
+  if (typeof Chart !== 'undefined') {
+    window.chartJsReady = true;
+    if (window.onChartReady) window.onChartReady();
+  } else if (!window.chartJsReady) {
+    setTimeout(pollChart, 50);
+  }
+})();
+
 function chartTheme() {
   if (window.__themed || typeof Chart === 'undefined') return;
   window.__themed = true;
@@ -1283,12 +1299,34 @@ function buildCC(rows) {
 function chartMsg(t) {
   ['cForecast','cCat','cExpiry','cCC'].forEach(function(id) {
     var w = document.getElementById(id);
-    if (w && w.parentNode) w.parentNode.innerHTML = '<div class="note" style="text-align:center;padding:40px 10px">' + t + '</div>';
+    if (w && w.parentNode) {
+      // Show error message without destroying canvas
+      var wrap = w.parentNode;
+      var msg = wrap.querySelector('.chart-error');
+      if (!msg) {
+        msg = document.createElement('div');
+        msg.className = 'chart-error';
+        msg.style.cssText = 'text-align:center;padding:40px 10px;color:var(--red);position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:var(--card);z-index:10';
+        wrap.style.position = 'relative';
+        wrap.appendChild(msg);
+      }
+      msg.textContent = t;
+      w.style.display = 'none';
+    }
   });
 }
 
 function drawCharts(rows) {
   if (typeof Chart === 'undefined') { chartMsg('⚠ Chart.js failed to load'); return; }
+  // Clear any previous error messages and show canvases
+  ['cForecast','cCat','cExpiry','cCC'].forEach(function(id) {
+    var w = document.getElementById(id);
+    if (w && w.parentNode) {
+      var msg = w.parentNode.querySelector('.chart-error');
+      if (msg) msg.remove();
+      w.style.display = '';
+    }
+  });
   chartTheme();
   var f = buildForecast(rows);
   CH.f && CH.f.destroy();
@@ -1494,6 +1532,7 @@ function renderRecon() {
   google.script.run
     .withSuccessHandler(function(trend) {
       if (!trend || !trend.length) { tb.innerHTML = '<tr><td colspan="3" class="note">No data</td></tr>'; return; }
+      if (typeof Chart === 'undefined') { tb.innerHTML = '<tr><td colspan="3" style="color:var(--red)">Chart.js not loaded</td></tr>'; return; }
       tb.innerHTML = trend.map(function(t) {
         return '<tr><td>'+t.period+'</td><td class="num">'+money(t.expensed)+'</td><td class="num">'+money(t.closing)+'</td></tr>';
       }).join('');
@@ -1843,10 +1882,10 @@ function toggleAutoSync() {
   var on = document.getElementById('autoSyncToggle').checked;
   document.getElementById('syncStatus').textContent = on ? 'Status: Active — every ' + document.getElementById('syncInterval').value + ' min' : 'Status: Disabled';
   if (window._syncTimer) { clearInterval(window._syncTimer); window._syncTimer = null; }
-  if (on) window._syncTimer = setInterval(function() {
+  if (on) window._syncTimer = setInterval(() => {
     addSyncLog('ℹ️ Auto-sync starting...');
     log('🔄 Auto syncing...', 'warn');
-    load(true);
+    load();
     loadHist();
   }, parseInt(document.getElementById('syncInterval').value) * 60 * 1000);
 }

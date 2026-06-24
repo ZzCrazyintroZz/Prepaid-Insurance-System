@@ -5,7 +5,7 @@
 
 function getAlertEmail_() {
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_CFG);
+    const sh = SpreadsheetApp.openById(SS_ID).getSheetByName(SHEET_CFG);
     if (sh) {
       const v = sh.getDataRange().getValues();
       for (const row of v) if (String(row[0]).trim() === 'AlertEmail' && row[1]) return String(row[1]).trim();
@@ -44,12 +44,16 @@ function checkAndNotify() {
     (url ? '<p style="margin-top:16px"><a href="' + url + '" style="background:#d4af37;color:#1a1400;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">เปิด Dashboard</a></p>' : '') +
     '<p style="color:#9a9488;font-size:12px;margin-top:20px">ส่งอัตโนมัติจากระบบตัดจ่ายค่าใช้จ่ายจ่ายล่วงหน้า (GL 11370010)</p></div>';
 
-  MailApp.sendEmail({
-    to: getAlertEmail_(),
-    subject: '[แจ้งเตือน] จ่ายล่วงหน้าใกล้ตัดจ่ายหมด ' + due.length + ' รายการ (งวด ' + cut + ')',
-    htmlBody: html
-  });
-  Logger.log('ส่งเมลแล้ว ' + due.length + ' รายการ');
+  try {
+    MailApp.sendEmail({
+      to: getAlertEmail_(),
+      subject: '[แจ้งเตือน] จ่ายล่วงหน้าใกล้ตัดจ่ายหมด ' + due.length + ' รายการ (งวด ' + cut + ')',
+      htmlBody: html
+    });
+    Logger.log('ส่งเมลแล้ว ' + due.length + ' รายการ');
+  } catch (e) {
+    Logger.log('ส่งเมลล้มเหลว: ' + e);
+  }
 }
 
 // ติดตั้ง trigger รายวัน 08:00 (รันครั้งเดียวเพื่อติดตั้ง)
