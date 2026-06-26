@@ -1,0 +1,3 @@
+.clasprc.json
+*.log
+node_modules/
