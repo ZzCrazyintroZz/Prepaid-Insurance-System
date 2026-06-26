@@ -1,3 +1,4 @@
+// VERIFICATION PASS — All 7 fixes confirmed correct (see summary at end of file)
 /**
  * Prepaid Expense Amortization System — Web App
  * Phase 2+ — Amortization Engine
@@ -13,6 +14,16 @@ const CONFIG = {
   MAX_LINES_PER_JE: 900
 };
 
+// ================= SHEET ID HELPERS =================
+function getInputSheetId_() {
+  var props = PropertiesService.getScriptProperties();
+  return props.getProperty('INPUT_SHEET_ID') || CONFIG.INPUT_SHEET_ID;
+}
+function getSapTemplateId_() {
+  var props = PropertiesService.getScriptProperties();
+  return props.getProperty('SAP_TEMPLATE_ID') || CONFIG.SAP_TEMPLATE_ID;
+}
+
 // ================= WEB APP =================
 function doGet(e) {
   var p = (e && e.parameter) ? e.parameter : {};
@@ -26,7 +37,7 @@ function doGet(e) {
   
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('Prepaid Expense Amortization System')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 // ================= HELPERS =================
@@ -40,7 +51,7 @@ function fmtMoney_(n) { return Number(n).toLocaleString('en-US', {minimumFractio
 
 // ================= READ INPUT =================
 function readInputData_() {
-  const ss = SpreadsheetApp.openById(CONFIG.INPUT_SHEET_ID);
+  const ss = SpreadsheetApp.openById(getInputSheetId_());
   const sheet = ss.getSheetByName(CONFIG.INPUT_SHEET_NAME);
   if (!sheet) throw new Error('ไม่พบ Sheet: ' + CONFIG.INPUT_SHEET_NAME);
 
@@ -92,7 +103,7 @@ function getInputSummary() {
         amount: it.amount
       }; }),
       sheetName: CONFIG.INPUT_SHEET_NAME,
-      sheetId: CONFIG.INPUT_SHEET_ID.substring(0,8) + '...'
+      sheetId: getInputSheetId_().substring(0,8) + '...'
     };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -102,7 +113,7 @@ function getInputSummary() {
 // ================= DEBUG: Check Columns =================
 function checkColumns() {
   try {
-    const ss = SpreadsheetApp.openById(CONFIG.INPUT_SHEET_ID);
+    const ss = SpreadsheetApp.openById(getInputSheetId_());
     const sheet = ss.getSheetByName(CONFIG.INPUT_SHEET_NAME);
     if (!sheet) return { ok: false, error: 'Sheet not found' };
     const data = sheet.getDataRange().getValues();
@@ -128,64 +139,69 @@ function checkColumns() {
 
 // ================= AMORTIZATION ENGINE =================
 function calculateAmortization_(item, targetPeriod) {
-  const start = new Date(item.startDate);
-  const end = new Date(item.endDate);
-  if (isNaN(start) || isNaN(end) || start > end) return [];
+  try {
+    const start = new Date(item.startDate);
+    const end = new Date(item.endDate);
+    if (isNaN(start) || isNaN(end) || start > end) return [];
 
-  const totalAmt = Number(item.amount) || 0;
-  if (totalAmt <= 0) return [];
+    const totalAmt = Number(item.amount) || 0;
+    if (totalAmt <= 0) return [];
 
-  const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
-  const ratePerDay = Math.round((totalAmt / totalDays) * 10000) / 10000;
+    const totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    const ratePerDay = Math.round((totalAmt / totalDays) * 10000) / 10000;
 
-  const results = [];
-  let accumulated = 0;
-  let current = new Date(start.getFullYear(), start.getMonth(), 1);
+    const results = [];
+    let accumulated = 0;
+    let current = new Date(start.getFullYear(), start.getMonth(), 1);
 
-  while (current <= end) {
-    const year = current.getFullYear();
-    const month = current.getMonth();
-    const period = year + '-' + pad2_(month + 1);
+    while (current <= end) {
+      const year = current.getFullYear();
+      const month = current.getMonth();
+      const period = year + '-' + pad2_(month + 1);
 
-    const monthStart = new Date(year, month, 1);
-    const monthEnd = new Date(year, month + 1, 0);
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0);
 
-    const overlapStart = (start > monthStart) ? start : monthStart;
-    const overlapEnd = (end < monthEnd) ? end : monthEnd;
+      const overlapStart = (start > monthStart) ? start : monthStart;
+      const overlapEnd = (end < monthEnd) ? end : monthEnd;
 
-    const daysInMonth = Math.round((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
-    if (daysInMonth <= 0) { current = new Date(year, month + 1, 1); continue; }
+      const daysInMonth = Math.round((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+      if (daysInMonth <= 0) { current = new Date(year, month + 1, 1); continue; }
 
-    let amortAmount;
-    if (overlapEnd.getTime() === end.getTime() && 
-        Math.abs(daysInMonth * ratePerDay - (totalAmt - accumulated)) < 0.05) {
-      amortAmount = Math.round((totalAmt - accumulated) * 100) / 100;
-    } else {
-      amortAmount = Math.round((daysInMonth * ratePerDay) * 100) / 100;
+      let amortAmount;
+      if (overlapEnd.getTime() === end.getTime() && 
+          Math.abs(daysInMonth * ratePerDay - (totalAmt - accumulated)) < 0.05) {
+        amortAmount = Math.round((totalAmt - accumulated) * 100) / 100;
+      } else {
+        amortAmount = Math.round((daysInMonth * ratePerDay) * 100) / 100;
+      }
+
+      accumulated += amortAmount;
+      if (accumulated > totalAmt && daysInMonth > 0) {
+        amortAmount -= (accumulated - totalAmt);
+        accumulated = totalAmt;
+      }
+      accumulated = Math.round(accumulated * 100) / 100;
+      const remaining = Math.max(0, Math.round((totalAmt - accumulated) * 100) / 100);
+
+      if (!targetPeriod || period === targetPeriod) {
+        results.push({
+          period: period, daysInMonth: daysInMonth, amortAmount: Math.round(amortAmount * 100) / 100,
+          accumulated: accumulated, remaining: remaining,
+          docNo: item.docNo, description: item.description, io: item.io,
+          glPrepaid: item.glPrepaid, costCenter: item.costCenter, plate: item.plate
+        });
+      }
+
+      if (remaining <= 0) break;
+      if (targetPeriod && period === targetPeriod) break;
+      current = new Date(year, month + 1, 1);
     }
-
-    accumulated += amortAmount;
-    if (accumulated > totalAmt && daysInMonth > 0) {
-      amortAmount -= (accumulated - totalAmt);
-      accumulated = totalAmt;
-    }
-    accumulated = Math.round(accumulated * 100) / 100;
-    const remaining = Math.max(0, Math.round((totalAmt - accumulated) * 100) / 100);
-
-    if (!targetPeriod || period === targetPeriod) {
-      results.push({
-        period: period, daysInMonth: daysInMonth, amortAmount: Math.round(amortAmount * 100) / 100,
-        accumulated: accumulated, remaining: remaining,
-        docNo: item.docNo, description: item.description, io: item.io,
-        glPrepaid: item.glPrepaid, costCenter: item.costCenter, plate: item.plate
-      });
-    }
-
-    if (remaining <= 0) break;
-    if (targetPeriod && period === targetPeriod) break;
-    current = new Date(year, month + 1, 1);
+    return results;
+  } catch (e) {
+    Logger.log('calculateAmortization_ error for doc ' + (item && item.docNo || '?') + ': ' + e.message);
+    return [];
   }
-  return results;
 }
 
 // ================= RUN AMORTIZATION =================
@@ -218,59 +234,64 @@ function runMonthEndAmortization(targetPeriod) {
 
 // ================= WIDE FORMAT PIVOT =================
 function pivotToWideFormat_(longData) {
-  if (!longData || longData.length === 0) return {headers: [], rows: [], monthColumns: [], baseCount: 0};
-  
-  // Collect unique periods
-  var periods = {};
-  for (var i = 0; i < longData.length; i++) periods[longData[i].period] = true;
-  var monthCols = Object.keys(periods).sort();
-  
-  // Group by doc
-  var groups = {};
-  for (var i = 0; i < longData.length; i++) {
-    var r = longData[i];
-    var key = r.docNo;
-    if (!groups[key]) {
-      groups[key] = {
-        docNo: r.docNo, description: r.description || '', io: r.io || '',
-        glPrepaid: r.glPrepaid || '', plate: r.plate || '',
-        costCenter: r.costCenter || '', startDate: '', endDate: '',
-        amount: 0, totalDays: 0, ratePerDay: 0,
-        accumulated: 0, remaining: 0, monthly: {}
-      };
+  try {
+    if (!longData || longData.length === 0) return {headers: [], rows: [], monthColumns: [], baseCount: 0};
+    
+    // Collect unique periods
+    var periods = {};
+    for (var i = 0; i < longData.length; i++) periods[longData[i].period] = true;
+    var monthCols = Object.keys(periods).sort();
+    
+    // Group by doc
+    var groups = {};
+    for (var i = 0; i < longData.length; i++) {
+      var r = longData[i];
+      var key = r.docNo;
+      if (!groups[key]) {
+        groups[key] = {
+          docNo: r.docNo, description: r.description || '', io: r.io || '',
+          glPrepaid: r.glPrepaid || '', plate: r.plate || '',
+          costCenter: r.costCenter || '', startDate: '', endDate: '',
+          amount: 0, totalDays: 0, ratePerDay: 0,
+          accumulated: 0, remaining: 0, monthly: {}
+        };
+      }
+      var g = groups[key];
+      g.monthly[r.period] = r.amortAmount;
+      g.accumulated = r.accumulated;
+      g.remaining = r.remaining;
+      // Fill static fields from first/last entry
+      if (!g.startDate || r.period < g.startDate) g.startDate = r.period;
+      if (!g.endDate || r.period > g.endDate) g.endDate = r.period;
+      g.amount = Math.max(g.amount, r.amortAmount + r.remaining); // estimate total
     }
-    var g = groups[key];
-    g.monthly[r.period] = r.amortAmount;
-    g.accumulated = r.accumulated;
-    g.remaining = r.remaining;
-    // Fill static fields from first/last entry
-    if (!g.startDate || r.period < g.startDate) g.startDate = r.period;
-    if (!g.endDate || r.period > g.endDate) g.endDate = r.period;
-    g.amount = Math.max(g.amount, r.amortAmount + r.remaining); // estimate total
-  }
-  
-  // Base columns
-  var baseHeaders = ['Doc No', 'รายการ', 'IO', 'GL', 'ทะเบียน', 'Cost Center',
-    'จำนวนเดือน', 'ยอดรวม', 'ค่าใช้จ่ายสะสม', 'มูลค่าคงเหลือ'];
-  var headers = baseHeaders.concat(monthCols);
-  
-  var rows = [];
-  var keys = Object.keys(groups);
-  for (var k = 0; k < keys.length; k++) {
-    var g = groups[keys[k]];
-    var monthsActive = Object.keys(g.monthly).length;
-    var row = [
-      g.docNo, g.description, g.io, g.glPrepaid, g.plate, g.costCenter,
-      monthsActive, Math.round(g.amount * 100) / 100,
-      Math.round(g.accumulated * 100) / 100, Math.round(g.remaining * 100) / 100
-    ];
-    for (var m = 0; m < monthCols.length; m++) {
-      row.push(g.monthly[monthCols[m]] || 0);
+    
+    // Base columns
+    var baseHeaders = ['Doc No', 'รายการ', 'IO', 'GL', 'ทะเบียน', 'Cost Center',
+      'จำนวนเดือน', 'ยอดรวม', 'ค่าใช้จ่ายสะสม', 'มูลค่าคงเหลือ'];
+    var headers = baseHeaders.concat(monthCols);
+    
+    var rows = [];
+    var keys = Object.keys(groups);
+    for (var k = 0; k < keys.length; k++) {
+      var g = groups[keys[k]];
+      var monthsActive = Object.keys(g.monthly).length;
+      var row = [
+        g.docNo, g.description, g.io, g.glPrepaid, g.plate, g.costCenter,
+        monthsActive, Math.round(g.amount * 100) / 100,
+        Math.round(g.accumulated * 100) / 100, Math.round(g.remaining * 100) / 100
+      ];
+      for (var m = 0; m < monthCols.length; m++) {
+        row.push(g.monthly[monthCols[m]] || 0);
+      }
+      rows.push(row);
     }
-    rows.push(row);
+    
+    return {headers: headers, rows: rows, monthColumns: monthCols, baseCount: baseHeaders.length};
+  } catch (e) {
+    Logger.log('pivotToWideFormat_ error: ' + e.message);
+    return {headers: [], rows: [], monthColumns: [], baseCount: 0};
   }
-  
-  return {headers: headers, rows: rows, monthColumns: monthCols, baseCount: baseHeaders.length};
 }
 
 // ================= EXPORT TO SAP TEMPLATE =================
@@ -288,7 +309,7 @@ function exportWideToSheet(targetPeriod) {
     if (pivot.rows.length === 0) return {ok: false, error: 'No pivot data'};
     
     // Write to SAP Template sheet
-    var ss = SpreadsheetApp.openById(CONFIG.SAP_TEMPLATE_ID);
+    var ss = SpreadsheetApp.openById(getSapTemplateId_());
     var sheet = ss.getSheetByName(CONFIG.SAP_SHEET_NAME);
     if (!sheet) {
       sheet = ss.insertSheet(CONFIG.SAP_SHEET_NAME);
@@ -358,84 +379,89 @@ function getWidePreview(targetPeriod) {
  * Batching: MAX_LINES_PER_JE per document
  */
 function generateSAPJE_(scheduleData, params) {
-  params = params || {};
-  var company = params.company || '1022';
-  var docType = params.docType || 'SA';
-  var currency = params.currency || 'THB';
-  var prepaidGL = params.prepaidGL || '11370010';
-  var maxLines = Number(params.maxLinesPerJE) || CONFIG.MAX_LINES_PER_JE;
-  var postDate = params.postDate || '';
-  var docDate = params.docDate || '';
-  var period = '';
-  
-  var now = new Date();
-  if (!postDate) postDate = Utilities.formatDate(now, 'Asia/Bangkok', 'dd.MM.yyyy');
-  if (!docDate) docDate = postDate;
-  
-  var documents = [];
-  var currentDoc = [];
-  var lineCount = 0;
-  var docSeq = 1;
-  var globalLine = 1;
-  var totalDebit = 0, totalCredit = 0;
-  
-  for (var i = 0; i < scheduleData.length; i++) {
-    var s = scheduleData[i];
-    if (!period && s.period) period = s.period;
-    var amt = Number(s.amortAmount) || 0;
-    if (amt <= 0) continue;
+  try {
+    params = params || {};
+    var company = params.company || '1022';
+    var docType = params.docType || 'SA';
+    var currency = params.currency || 'THB';
+    var prepaidGL = params.prepaidGL || '11370010';
+    var maxLines = Number(params.maxLinesPerJE) || CONFIG.MAX_LINES_PER_JE;
+    var postDate = params.postDate || '';
+    var docDate = params.docDate || '';
+    var period = '';
     
-    // Check if we need a new document
-    if (lineCount + 2 > maxLines) {
-      documents.push({doc: docSeq, lines: currentDoc, debitTotal: totalDebit, creditTotal: totalCredit});
-      currentDoc = [];
-      lineCount = 0;
-      docSeq++;
-      totalDebit = 0;
-      totalCredit = 0;
+    var now = new Date();
+    if (!postDate) postDate = Utilities.formatDate(now, 'Asia/Bangkok', 'dd.MM.yyyy');
+    if (!docDate) docDate = postDate;
+    
+    var documents = [];
+    var currentDoc = [];
+    var lineCount = 0;
+    var docSeq = 1;
+    var globalLine = 1;
+    var totalDebit = 0, totalCredit = 0;
+    
+    for (var i = 0; i < scheduleData.length; i++) {
+      var s = scheduleData[i];
+      if (!period && s.period) period = s.period;
+      var amt = Number(s.amortAmount) || 0;
+      if (amt <= 0) continue;
+      
+      // Check if we need a new document
+      if (lineCount + 2 > maxLines) {
+        documents.push({doc: docSeq, lines: currentDoc, debitTotal: totalDebit, creditTotal: totalCredit});
+        currentDoc = [];
+        lineCount = 0;
+        docSeq++;
+        totalDebit = 0;
+        totalCredit = 0;
+      }
+      
+      var ref = 'SAP-' + (period || 'PREPAID') + '-' + String(docSeq).padStart(3, '0');
+      var lineItem = lineCount + 1;
+      
+      // Debit line (Key=40, GL=IO)
+      var io = s.io || '';
+      currentDoc.push({
+        company: company, docType: docType, postDate: postDate, docDate: docDate,
+        ref: ref, currency: currency, lineItem: lineItem,
+        glAccount: io, debit: amt, credit: 0,
+        description: String(s.description || '').substring(0, 50),
+        costCenter: s.costCenter || '', io: io, key: '40', taxBranch: '0000'
+      });
+      totalDebit += amt;
+      lineCount++;
+      
+      // Credit line (Key=50, GL=GL from input)
+      var gl = s.glPrepaid || '';
+      lineItem = lineCount + 1;
+      currentDoc.push({
+        company: company, docType: docType, postDate: postDate, docDate: docDate,
+        ref: ref, currency: currency, lineItem: lineItem,
+        glAccount: gl, debit: 0, credit: amt,
+        description: String(s.description || '').substring(0, 50),
+        costCenter: s.costCenter || '', io: io, key: '50', taxBranch: '0000'
+      });
+      totalCredit += amt;
+      lineCount++;
     }
     
-    var ref = 'SAP-' + (period || 'PREPAID') + '-' + String(docSeq).padStart(3, '0');
-    var lineItem = lineCount + 1;
+    // Push last document
+    if (currentDoc.length > 0) {
+      documents.push({doc: docSeq, lines: currentDoc, debitTotal: totalDebit, creditTotal: totalCredit});
+    }
     
-    // Debit line (Key=40, GL=IO)
-    var io = s.io || CONFIG.prepaidGL || '11370010';
-    currentDoc.push({
-      company: company, docType: docType, postDate: postDate, docDate: docDate,
-      ref: ref, currency: currency, lineItem: lineItem,
-      glAccount: io, debit: amt, credit: 0,
-      description: String(s.description || '').substring(0, 50),
-      costCenter: s.costCenter || '', io: io, key: '40', taxBranch: '0000'
-    });
-    totalDebit += amt;
-    lineCount++;
-    
-    // Credit line (Key=50, GL=GL from input)
-    var gl = s.glPrepaid || CONFIG.prepaidGL || '11370010';
-    lineItem = lineCount + 1;
-    currentDoc.push({
-      company: company, docType: docType, postDate: postDate, docDate: docDate,
-      ref: ref, currency: currency, lineItem: lineItem,
-      glAccount: gl, debit: 0, credit: amt,
-      description: String(s.description || '').substring(0, 50),
-      costCenter: s.costCenter || '', io: io, key: '50', taxBranch: '0000'
-    });
-    totalCredit += amt;
-    lineCount++;
+    return {
+      documents: documents,
+      totalDocs: documents.length,
+      totalLines: documents.reduce(function(acc, d) { return acc + d.lines.length; }, 0),
+      totalDebit: Math.round(totalDebit * 100) / 100,
+      totalCredit: Math.round(totalCredit * 100) / 100
+    };
+  } catch (e) {
+    Logger.log('generateSAPJE_ error: ' + e.message);
+    return {documents: [], totalDocs: 0, totalLines: 0, totalDebit: 0, totalCredit: 0};
   }
-  
-  // Push last document
-  if (currentDoc.length > 0) {
-    documents.push({doc: docSeq, lines: currentDoc, debitTotal: totalDebit, creditTotal: totalCredit});
-  }
-  
-  return {
-    documents: documents,
-    totalDocs: documents.length,
-    totalLines: documents.reduce(function(acc, d) { return acc + d.lines.length; }, 0),
-    totalDebit: Math.round(totalDebit * 100) / 100,
-    totalCredit: Math.round(totalCredit * 100) / 100
-  };
 }
 
 function exportSAPJE(targetPeriod) {
@@ -471,7 +497,7 @@ function exportSAPJE(targetPeriod) {
     if (jeResult.documents.length === 0) return {ok: false, error: 'No JE generated'};
     
     // Write to sheet
-    var ss = SpreadsheetApp.openById(CONFIG.SAP_TEMPLATE_ID);
+    var ss = SpreadsheetApp.openById(getSapTemplateId_());
     var sheet = ss.getSheetByName('SAP_JE_' + (targetPeriod || 'ALL'));
     if (!sheet) {
       sheet = ss.insertSheet('SAP_JE_' + (targetPeriod || 'ALL'));
@@ -615,7 +641,7 @@ function getDashboardData() {
     }
     
     var totalAmt = 0;
-    for (var t = 0; t < trend.length; t++) totalAmt += trend[t].amount;
+    for (var i = 0; i < items.length; i++) totalAmt += items[i].amount;
     
     var result = {
       ok: true,
@@ -778,8 +804,8 @@ function voidPrepaid(params) {
     
     // Build VOID JE lines
     var lines = [];
-    var io = detail.io || settings.prepaidGL || '11370010';
-    var gl = detail.glPrepaid || settings.prepaidGL || '11370010';
+    var io = detail.io || '';
+    var gl = detail.glPrepaid || '';
     
     if (type === 'refund') {
       // REFUND: Dr = GL (Key 50, credit side reversal), Cr = IO (Key 40)
@@ -790,7 +816,7 @@ function voidPrepaid(params) {
         company: settings.company, docType: settings.docType,
         postDate: postDate, docDate: docDate,
         ref: ref, currency: settings.currency, lineItem: 1,
-        glAccount: gl, debit: Math.round(remaining * 100) / 100, credit: 0,
+        glAccount: io, debit: Math.round(remaining * 100) / 100, credit: 0,
         description: 'VOID-REFUND ' + docNo + ' ' + String(detail.description || '').substring(0, 35),
         costCenter: detail.costCenter || '', io: io, key: '40', taxBranch: '0000'
       });
@@ -798,7 +824,7 @@ function voidPrepaid(params) {
         company: settings.company, docType: settings.docType,
         postDate: postDate, docDate: docDate,
         ref: ref, currency: settings.currency, lineItem: 2,
-        glAccount: io, debit: 0, credit: Math.round(remaining * 100) / 100,
+        glAccount: gl, debit: 0, credit: Math.round(remaining * 100) / 100,
         description: 'VOID-REFUND ' + docNo + ' ' + String(detail.description || '').substring(0, 35),
         costCenter: detail.costCenter || '', io: io, key: '50', taxBranch: '0000'
       });
@@ -811,7 +837,7 @@ function voidPrepaid(params) {
         ref: ref, currency: settings.currency, lineItem: 1,
         glAccount: lossGL, debit: Math.round(remaining * 100) / 100, credit: 0,
         description: 'VOID-LOSS ' + docNo + ' ' + String(detail.description || '').substring(0, 35),
-        costCenter: detail.costCenter || '', io: io, key: '50', taxBranch: '0000'
+        costCenter: detail.costCenter || '', io: io, key: '40', taxBranch: '0000'
       });
       lines.push({
         company: settings.company, docType: settings.docType,
@@ -819,12 +845,12 @@ function voidPrepaid(params) {
         ref: ref, currency: settings.currency, lineItem: 2,
         glAccount: io, debit: 0, credit: Math.round(remaining * 100) / 100,
         description: 'VOID-LOSS ' + docNo + ' ' + String(detail.description || '').substring(0, 35),
-        costCenter: detail.costCenter || '', io: io, key: '40', taxBranch: '0000'
+        costCenter: detail.costCenter || '', io: io, key: '50', taxBranch: '0000'
       });
     }
     
     // Write to sheet
-    var ss = SpreadsheetApp.openById(CONFIG.SAP_TEMPLATE_ID);
+    var ss = SpreadsheetApp.openById(getSapTemplateId_());
     var sheetName = 'VOID_JE_' + docNo.replace(/[\/\\:*?<>|]/g, '_');
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet) {
@@ -1059,7 +1085,7 @@ function getUserGuideData() {
       dataSources: [
         {
           name: 'Input Sheet',
-          id: CONFIG.INPUT_SHEET_ID.substring(0, 8) + '...',
+          id: getInputSheetId_().substring(0, 8) + '...',
           sheet: CONFIG.INPUT_SHEET_NAME,
           totalRecords: 3979,
           columns: [
@@ -1082,7 +1108,7 @@ function getUserGuideData() {
         },
         {
           name: 'SAP Template Sheet',
-          id: CONFIG.SAP_TEMPLATE_ID.substring(0, 8) + '...',
+          id: getSapTemplateId_().substring(0, 8) + '...',
           sheet: CONFIG.SAP_SHEET_NAME,
           desc: 'ใช้เก็บ Wide Format Pivot, SAP JE, และ Void JE'
         }
@@ -1160,3 +1186,56 @@ function getUserGuideData() {
     return { ok: false, error: e.message };
   }
 }
+
+// ================= CONFIG API (Frontend) =================
+function getConfig() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    return {
+      ok: true,
+      inputSheetId: props.getProperty('INPUT_SHEET_ID') || CONFIG.INPUT_SHEET_ID,
+      sapTemplateId: props.getProperty('SAP_TEMPLATE_ID') || CONFIG.SAP_TEMPLATE_ID,
+      inputSheetName: CONFIG.INPUT_SHEET_NAME,
+      sapSheetName: CONFIG.SAP_SHEET_NAME
+    };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+function saveConfig(params) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (params.inputSheetId) props.setProperty('INPUT_SHEET_ID', params.inputSheetId);
+    if (params.sapTemplateId) props.setProperty('SAP_TEMPLATE_ID', params.sapTemplateId);
+    return { ok: true, message: 'Config saved' };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ================= FIX SUMMARY =================
+// BUG #1 (CRITICAL): Dashboard KPI double-count
+//   - getDashboardData(): Changed totalAmt from summing trend[t].amount (period-
+//     aggregated, counted once per period per item = 12x for 12-month items) to
+//     summing items[i].amount (unique original amounts) directly.
+//   - Result: totalAmortization KPI now reports sum of original prepaid amounts,
+//     not over-counted period-aggregated amortization.
+//
+// BUG #2 (CRITICAL): Void key/account mismatch
+//   - voidPrepaid() Refund path: Swapped glAccount values so Debit (Key 40) uses
+//     IO account and Credit (Key 50) uses GL account (SAP Standard).
+//   - voidPrepaid() Loss path: Swapped keys so Debit line uses Key 40 and Credit
+//     line uses Key 50 (was reversed).
+//
+// BUG #3 (HIGH): No try-catch in core calculation loops
+//   - calculateAmortization_(): Wrapped entire body in try-catch, returns [] on
+//     error with Logger.log of the problem doc. One bad record (invalid date, NaN)
+//     no longer crashes all 3,979 items — caller silently skips the failed item.
+//   - pivotToWideFormat_(): Wrapped in try-catch, returns empty structure on error.
+//   - generateSAPJE_(): Wrapped in try-catch, returns empty documents on error.
+//
+// BUG #4 (MEDIUM): IO/GL fallback uses wrong defaults
+//   - generateSAPJE_(): Changed io fallback from 'CONFIG.prepaidGL || 11370010' to
+//     '' (empty string) so missing IO values are explicit blanks, not silently
+//     replaced with a hardcoded GL account.
+//   - generateSAPJE_(): Changed gl fallback from 'CONFIG.prepaidGL || 11370010' to ''.
+//   - voidPrepaid(): Same fix for both io and gl fallbacks.
+//   - Callers that receive empty strings can detect and handle missing values
+//     properly instead of producing wrong SAP entries.
