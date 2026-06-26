@@ -9,11 +9,14 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
   <style>
-    :root{--bg:#080809;--sf:#0E0E10;--card:#111113;--card2:#161618;--bdr:rgba(255,255,255,.07);--gold:#C9A96E;--tx:#ECEBE6;--mt:#676460;--gn:#3A9F65;--rd:#B85252;--bl:#5888BB;--r:8px}
-    .light{--bg:#f5f3f0;--sf:#ffffff;--card:#ffffff;--card2:#f0ede8;--bdr:rgba(0,0,0,.10);--tx:#1a1a1a;--mt:#88827a}
+    :root{--bg:#080809;--sf:#0E0E10;--card:#111113;--card2:#161618;--bdr:rgba(255,255,255,.07);--gold:#C9A96E;--tx:#ECEBE6;--mt:#676460;--gn:#3A9F65;--rd:#B85252;--bl:#5888BB;--vi:#8070CC;--r:8px;--nav:228px;--hh:52px}
+    .light{--bg:#f5f3f0;--sf:#ffffff;--card:#ffffff;--card2:#f0ede8;--bdr:rgba(0,0,0,.10);--tx:#1a1a1a;--mt:#88827a;--gold:#9A7230}
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Prompt',sans-serif;background:var(--bg);color:var(--tx);transition:background .25s,color .25s}
-    header{height:52px;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--sf);border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:100}
+    #app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+    header{height:var(--hh);display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--sf);border-bottom:1px solid var(--bdr);flex-shrink:0}
+    .hamburger{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:6px;border:1px solid var(--bdr);background:transparent;color:var(--tx);cursor:pointer;font-size:16px;flex-shrink:0}
+    .hamburger:hover{background:rgba(255,255,255,.05)}
     .h-logo{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
     .h-logo:hover .h-icon{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.16)}
     .h-icon{width:28px;height:28px;border-radius:5px;background:rgba(201,169,110,.10);border:1px solid rgba(201,169,110,.22);display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
@@ -24,7 +27,20 @@
     .chip:hover{background:rgba(255,255,255,.04)}
     .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
     .dot.g{background:var(--gn)}.dot.y{background:var(--gold)}.dot.r{background:var(--rd)}
-    #main{max-width:1200px;margin:0 auto;padding:20px}
+    #main{display:flex;flex:1;overflow:hidden}
+    /* ===== SIDEBAR ===== */
+    nav{width:var(--nav);flex-shrink:0;background:var(--sf);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow-y:auto;padding:8px 6px}
+    .ng{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.12em;color:var(--mt);padding:12px 10px 4px;opacity:.65}
+    .ng:first-child{padding-top:6px}
+    .ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:5px;cursor:pointer;color:var(--mt);font-size:12px;transition:all .10s;position:relative;letter-spacing:.01em;border:1px solid transparent;user-select:none}
+    .ni:hover{background:rgba(255,255,255,.03);color:var(--tx)}
+    .ni.on{background:rgba(201,169,110,.08);border-color:rgba(201,169,110,.14);color:var(--gold);font-weight:500}
+    .ni.on::before{content:'';position:absolute;left:0;top:20%;height:60%;width:2px;background:var(--gold);border-radius:0 2px 2px 0}
+    .ic{font-size:12px;width:16px;text-align:center;flex-shrink:0;pointer-events:none}
+    .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99}
+    .nav-overlay.show{display:block}
+    /* ===== CONTENT ===== */
+    #ct{flex:1;overflow-y:auto;padding:20px;background:var(--bg);-webkit-overflow-scrolling:touch}
     .section{display:none}.section.active{display:block}
     .ph{margin-bottom:20px}
     .pt{font-family:'DM Serif Display',serif;font-size:26px;color:var(--tx)}
@@ -33,10 +49,13 @@
     .card h3{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:14px;display:flex;align-items:center;gap:8px}
     .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
     .kpi{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px 16px;border-left:2px solid var(--gold);transition:background .25s}
-    .kpi.bl{border-left-color:var(--bl)}.kpi.gn{border-left-color:var(--gn)}.kpi.rd{border-left-color:var(--rd)}
+    .kpi.bl{border-left-color:var(--bl)}.kpi.gn{border-left-color:var(--gn)}.kpi.rd{border-left-color:var(--rd)}.kpi.vi{border-left-color:var(--vi)}
     .kv{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500;color:var(--tx)}
     .kl{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
     .ks{font-size:10px;color:var(--mt);margin-top:2px}
+    .kpi-wide{grid-column:1/-1}
+    .progress-bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:6px}
+    .progress-fill{height:100%;border-radius:3px;transition:width .6s ease}
     .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;font-family:'Prompt',sans-serif}
     .btn-pri{background:rgba(201,169,110,.10);border-color:rgba(201,169,110,.28);color:var(--gold)}
     .btn-pri:hover{background:rgba(201,169,110,.18);border-color:rgba(201,169,110,.45)}
@@ -47,10 +66,6 @@
     .btn-ghost:hover{background:rgba(255,255,255,.04);color:var(--tx)}
     .btn-sm{padding:5px 10px;font-size:10px}
     .btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
-    .tab{padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;border:1px solid transparent;color:var(--mt);background:transparent;font-family:'Prompt',sans-serif}
-    .tab:hover{background:rgba(255,255,255,.03);color:var(--tx)}
-    .tab.on{background:rgba(201,169,110,.10);border-color:rgba(201,169,110,.28);color:var(--gold);font-weight:500}
     .fg{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-bottom:10px}
     .fg label{font-size:11px;color:var(--mt)}
     .fi{padding:7px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;font-family:'JetBrains Mono',monospace;outline:none;transition:.12s}
@@ -61,7 +76,8 @@
     .tb td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--tx);white-space:nowrap}
     .tb tr:hover td{background:rgba(255,255,255,.02)}
     .num{text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px}
-    .chart-wrap{height:280px;position:relative}
+    .chart-wrap{height:260px;position:relative}
+    .chart-wrap-sm{height:200px;position:relative}
     .al{padding:9px 12px;border-radius:5px;margin-bottom:10px;font-size:12px;border:1px solid transparent;display:flex;gap:8px}
     .al-ok{background:rgba(58,159,101,.07);border-color:rgba(58,159,101,.18);color:#6ee7b7}
     .al-er{background:rgba(184,82,82,.07);border-color:rgba(184,82,82,.18);color:#fca5a5}
@@ -73,12 +89,50 @@
     .result-box{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px;margin-top:12px;display:none}
     .result-box.show{display:block}
     .hidden{display:none!important}
-    @media(max-width:600px){.kpi-grid{grid-template-columns:1fr 1fr}}
+    .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+    /* ===== BOTTOM NAV (mobile) ===== */
+    .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--sf);border-top:1px solid var(--bdr);z-index:100;padding:4px 0 env(safe-area-inset-bottom,6px)}
+    .bn-items{display:flex;justify-content:space-around;align-items:center;padding:0 4px}
+    .bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 6px;cursor:pointer;color:var(--mt);font-size:9px;font-weight:500;transition:color .15s;min-width:58px;border-radius:6px;-webkit-tap-highlight-color:transparent}
+    .bn-item.on,.bn-item:hover{color:var(--gold)}
+    .bn-ic{font-size:18px;line-height:1}
+    /* ===== RESPONSIVE ===== */
+    @media(max-width:1024px){:root{--nav:196px}.chart-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:768px){
+      :root{--nav:0px;--hh:50px}
+      nav{display:none;position:fixed;top:var(--hh);left:0;bottom:60px;width:260px;z-index:200;background:var(--sf);border-right:1px solid var(--bdr);padding:12px 6px;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+      nav.open{display:flex}
+      .nav-overlay.show{display:block}
+      .hamburger{display:flex!important}
+      header{padding:0 14px;gap:8px}
+      #ct{padding:12px;padding-bottom:70px!important}
+      .chart-grid{grid-template-columns:1fr;gap:12px}
+      .bottom-nav{display:block}
+      .kpi-grid{grid-template-columns:1fr 1fr;gap:8px}
+      .ni{min-height:44px}
+      .btn{min-height:38px}
+    }
+    @media(max-width:768px) and (orientation:landscape){
+      :root{--hh:42px}
+      .bottom-nav{display:none}
+      #ct{padding-bottom:0!important}
+    }
+    @media(max-width:480px){
+      :root{--hh:48px;--r:6px}
+      header{padding:0 10px;gap:5px}
+      #ct{padding:10px;padding-bottom:70px!important}
+      .h-name{font-size:13px}
+      .h-sub{display:none}
+      .kpi-grid{grid-template-columns:1fr 1fr;gap:7px}
+    }
+    @media print{nav,header,#toast,.bottom-nav,.btn{display:none!important}#ct,#main,#app,body{overflow:visible!important}}
   </style>
 </head>
 <body>
+<div id="app">
 <header>
-  <div class="h-logo" onclick="switchTab('dashboard')" title="กลับหน้า Dashboard">
+  <button class="hamburger" id="hamburger" onclick="toggleNav()" aria-label="Toggle navigation">☰</button>
+  <div class="h-logo" onclick="go('dashboard')" title="กลับหน้า Dashboard">
     <div class="h-icon">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -94,246 +148,331 @@
 </header>
 
 <div id="main">
-  <!-- Tabs -->
-  <div class="tabs">
-    <div class="tab on" data-tab="dashboard" onclick="switchTab('dashboard')">📈 Dashboard</div>
-    <div class="tab" data-tab="amort" onclick="switchTab('amort')">🚀 Amortization</div>
-    <div class="tab" data-tab="schedule" onclick="switchTab('schedule')">📅 Schedule</div>
-    <div class="tab" data-tab="sap" onclick="switchTab('sap')">📤 SAP</div>
-    <div class="tab" data-tab="checker" onclick="switchTab('checker')">🔍 Checker</div>
-    <div class="tab" data-tab="void" onclick="switchTab('void')">⛔ Void</div>
-    <div class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ Settings</div>
-    <div class="tab" data-tab="guide" onclick="switchTab('guide')">📖 Guide</div>
-  </div>
+  <!-- ===== LEFT SIDEBAR ===== -->
+  <nav>
+    <div class="ng">Main Menu</div>
+    <div class="ni on" id="nav-dashboard" onclick="go('dashboard')"><span class="ic">◈</span>Dashboard</div>
+    <div class="ni" id="nav-amort" onclick="go('amort')"><span class="ic">🚀</span>Amortization</div>
+    <div class="ni" id="nav-schedule" onclick="go('schedule')"><span class="ic">📅</span>Schedule</div>
+    <div class="ng">Data</div>
+    <div class="ni" id="nav-sap" onclick="go('sap')"><span class="ic">📤</span>SAP</div>
+    <div class="ni" id="nav-checker" onclick="go('checker')"><span class="ic">🔍</span>Checker</div>
+    <div class="ni" id="nav-void" onclick="go('void')"><span class="ic">⛔</span>Void</div>
+    <div class="ng">System</div>
+    <div class="ni" id="nav-settings" onclick="go('settings')"><span class="ic">⚙️</span>Settings</div>
+    <div class="ni" id="nav-guide" onclick="go('guide')"><span class="ic">📖</span>Guide</div>
+  </nav>
 
-  <!-- ===== SECTION: DASHBOARD ===== -->
-  <div class="section active" id="secDashboard">
-    <div class="ph"><div class="pt">Dashboard</div><div class="ps" id="dashSub">Loading...</div></div>
-    <div class="kpi-grid" id="dashKpis">
-      <div class="kpi"><div class="kv" id="dTotalItems">—</div><div class="kl">รายการทั้งหมด</div></div>
-      <div class="kpi bl"><div class="kv" id="dTotalAmt">—</div><div class="kl">ยอดตัดจ่ายรวม</div></div>
-      <div class="kpi gn"><div class="kv" id="dCurPeriod">—</div><div class="kl">งวดปัจจุบัน</div></div>
-    </div>
-    <div class="card">
-      <h3><i class="bi bi-graph-up"></i> แนวโน้มค่าตัดจ่ายรายงวด</h3>
-      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-    </div>
-    <div class="card">
-      <h3><i class="bi bi-bar-chart"></i> ค่าตัดจ่ายงวดนี้ แยกตาม GL</h3>
-      <div class="chart-wrap"><canvas id="glChart"></canvas></div>
-    </div>
-  </div>
+  <!-- ===== MOBILE OVERLAY ===== -->
+  <div class="nav-overlay" id="navOverlay" onclick="toggleNav()"></div>
 
-  <!-- ===== SECTION: AMORTIZATION ===== -->
-  <div class="section" id="secAmort">
-    <div class="ph"><div class="pt">Run Amortization</div><div class="ps">คำนวณตัดจ่ายรายเดือน</div></div>
-    <div class="card">
-      <div class="fg"><label>งวด</label><input class="fi" id="amortPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด"></div>
-      <div class="btn-row">
-        <button class="btn btn-gn" onclick="runAmort()"><i class="bi bi-play-fill"></i> Run</button>
-      </div>
-      <div id="loaderAmort" class="loader hidden">⏳ กำลังคำนวณ...</div>
-      <div class="result-box" id="resultAmort"></div>
-    </div>
-  </div>
+  <!-- ===== CONTENT AREA ===== -->
+  <div id="ct">
 
-  <!-- ===== SECTION: SCHEDULE ===== -->
-  <div class="section" id="secSchedule">
-    <div class="ph"><div class="pt">Amortization Schedule</div><div class="ps">ตารางตัดจ่ายแบบ Wide Format — 1 รายการ/แถว 🟦</div></div>
-    <div class="card">
-      <div class="fg"><label>งวด</label>
-        <input class="fi" id="schedPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-pri" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>
-        <button class="btn btn-gn" onclick="exportWide()"><i class="bi bi-file-spreadsheet"></i> Export to Sheet</button>
-      </div>
-      <div id="loaderWide" class="loader hidden">⏳ กำลังโหลด...</div>
-      <div class="result-box" id="resultWide"></div>
-      <div class="tw" style="margin-top:10px;max-height:400px;overflow:auto">
-        <table class="tb" id="wideTable">
-          <thead id="wideHead"></thead>
-          <tbody id="wideBody"><tr><td style="color:var(--mt);text-align:center">กด Preview เพื่อดูข้อมูล</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+    <!-- ===== SECTION: DASHBOARD ===== -->
+    <div class="section active" id="secDashboard">
+      <div class="ph"><div class="pt">Dashboard</div><div class="ps" id="dashSub">Loading...</div></div>
 
-  <!-- ===== SECTION: SAP ===== -->
-  <div class="section" id="secSap">
-    <div class="ph"><div class="pt">SAP Generator</div><div class="ps">สร้าง Journal Entry — Debit(IO/40) / Credit(GL/50) · 900 lines/JE</div></div>
-    <div class="card">
-      <div class="fg"><label>งวด</label><input class="fi" id="sapPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px"></div>
-      <div class="btn-row">
-        <button class="btn btn-pri" onclick="previewSAPJE()"><i class="bi bi-eye"></i> Preview</button>
-        <button class="btn btn-gn" onclick="exportSAPJE()"><i class="bi bi-file-earmark-excel"></i> Generate & Export</button>
+      <!-- KPI Row 1: New data points -->
+      <div class="kpi-grid" id="kpiNewRow1">
+        <div class="kpi gn"><div class="kv" id="dActiveItems">—</div><div class="kl">Active Items</div><div class="ks" id="dCompletedItems"></div></div>
+        <div class="kpi bl"><div class="kv" id="dTotalRemaining">—</div><div class="kl">Total Remaining Balance</div></div>
+        <div class="kpi"><div class="kv" id="dAvgDuration">—</div><div class="kl">Avg Duration (months)</div></div>
+        <div class="kpi rd"><div class="kv" id="dExpiringThisMonth">—</div><div class="kl">Expiring This Month</div></div>
+        <div class="kpi vi"><div class="kv" id="dMomChange">—</div><div class="kl">MoM Change</div><div class="ks" id="dMomPeriod"></div></div>
       </div>
-      <div id="loaderSAP" class="loader hidden">⏳ กำลังสร้าง...</div>
-      <div class="result-box" id="resultSAP"></div>
-      <div class="tw" style="margin-top:10px">
-        <table class="tb" id="sapTable">
-          <thead><tr><th>Doc</th><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>IO</th><th>Description</th></tr></thead>
-          <tbody id="sapBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด Preview เพื่อดูตัวอย่าง</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 
-  <!-- ===== SECTION: CHECKER ===== -->
-  <div class="section" id="secChecker">
-    <div class="ph"><div class="pt">Pre-Upload Checker</div><div class="ps">ตรวจสอบข้อมูลก่อน Export SAP — ระบบจะเช็คความถูกต้องของข้อมูลทั้งหมด</div></div>
-    
-    <div class="card">
-      <h3><i class="bi bi-shield-check"></i> Validation Checks (10 รายการ)</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:12px">
-        <div>✅ 1. Doc No ครบ</div>
-        <div>✅ 2. Doc No ซ้ำ</div>
-        <div>✅ 3. IO ครบ</div>
-        <div>✅ 4. GL ครบ</div>
-        <div>✅ 5. วันที่เริ่มต้น</div>
-        <div>✅ 6. วันที่สิ้นสุด</div>
-        <div>✅ 7. วันที่เริ่มต้น ≤ สิ้นสุด</div>
-        <div>✅ 8. วันที่สิ้นสุดผ่านไปแล้ว</div>
-        <div>✅ 9. ยอดเงิน > 0</div>
-        <div>✅ 10. Amortization มียอดคงเหลือ</div>
+      <!-- KPI Row 2: Largest Item + Health Score -->
+      <div class="kpi-grid" id="kpiNewRow2">
+        <div class="kpi kpi-wide"><div class="kv" id="dLargestItem" style="font-size:15px">—</div><div class="kl">Largest Item</div><div class="ks" id="dLargestAmt"></div></div>
+        <div class="kpi bl kpi-wide"><div class="kl">Health Score</div><div class="progress-bar"><div class="progress-fill" id="dHealthBar" style="width:0%;background:var(--gn)"></div></div><div style="display:flex;justify-content:space-between;margin-top:4px"><span class="ks">Data Quality</span><span class="kv" id="dHealthScore" style="font-size:14px">—</span></div></div>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-pri" onclick="runChecker()"><i class="bi bi-play-fill"></i> Run Check</button>
+
+      <!-- KPI Row 3: Existing KPIs -->
+      <div class="kpi-grid" id="dashKpis">
+        <div class="kpi"><div class="kv" id="dTotalItems">—</div><div class="kl">รายการทั้งหมด</div></div>
+        <div class="kpi bl"><div class="kv" id="dTotalAmt">—</div><div class="kl">ยอดตัดจ่ายรวม</div></div>
+        <div class="kpi gn"><div class="kv" id="dCurPeriod">—</div><div class="kl">งวดปัจจุบัน</div></div>
       </div>
-    </div>
-    
-    <div id="loaderChecker" class="loader hidden">⏳ กำลังตรวจสอบข้อมูล 3,979 รายการ...</div>
-    
-    <div id="checkerResult" style="display:none">
-      <div class="card" id="checkerSummary">
-        <h3><i class="bi bi-clipboard-data"></i> Result Summary</h3>
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kv" id="cTotalItems">—</div><div class="kl">รายการที่เช็ค</div></div>
-          <div class="kpi gn"><div class="kv" id="cPassed">—</div><div class="kl">ผ่าน</div></div>
-          <div class="kpi rd"><div class="kv" id="cErrors">—</div><div class="kl">Errors</div></div>
-          <div class="kpi bl"><div class="kv" id="cWarnings">—</div><div class="kl">Warnings</div></div>
+
+      <!-- Charts: Row 1 - Trend + Accumulated -->
+      <div class="chart-grid">
+        <div class="card">
+          <h3><i class="bi bi-graph-up"></i> แนวโน้มค่าตัดจ่ายรายงวด</h3>
+          <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
         </div>
-        <div id="cStatusBadge" style="margin-top:8px"></div>
-      </div>
-      
-      <div class="card" id="checkerErrorCard" style="display:none">
-        <h3 style="color:var(--rd)"><i class="bi bi-x-circle"></i> Errors</h3>
-        <div class="tw" style="max-height:300px;overflow:auto">
-          <table class="tb">
-            <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
-            <tbody id="cErrorBody"></tbody>
-          </table>
+        <div class="card">
+          <h3><i class="bi bi-graph-up-arrow"></i> Accumulated Trend (S-10)</h3>
+          <div class="chart-wrap"><canvas id="lineAccumTrend"></canvas></div>
         </div>
       </div>
-      
-      <div class="card" id="checkerWarnCard" style="display:none">
-        <h3 style="color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> Warnings</h3>
-        <div class="tw" style="max-height:300px;overflow:auto">
-          <table class="tb">
-            <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
-            <tbody id="cWarnBody"></tbody>
-          </table>
+
+      <!-- Charts: Row 2 - CC Stacked + Pie Company -->
+      <div class="chart-grid">
+        <div class="card">
+          <h3><i class="bi bi-bar-chart-steps"></i> Stacked by Cost Center (S-7)</h3>
+          <div class="chart-wrap"><canvas id="stackedBarCC"></canvas></div>
+        </div>
+        <div class="card">
+          <h3><i class="bi bi-pie-chart"></i> By Company (S-8)</h3>
+          <div class="chart-wrap"><canvas id="pieCompany"></canvas></div>
         </div>
       </div>
-      
+
+      <!-- Charts: Row 3 - Active Items by Month + Top 10 IO -->
+      <div class="chart-grid">
+        <div class="card">
+          <h3><i class="bi bi-bar-chart"></i> Active Items by Month (S-9)</h3>
+          <div class="chart-wrap"><canvas id="barActiveItems"></canvas></div>
+        </div>
+        <div class="card">
+          <h3><i class="bi bi-bar-chart"></i> Top 10 IO (S-11)</h3>
+          <div class="chart-wrap"><canvas id="barIoTop10"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Existing GL Chart -->
       <div class="card">
-        <h3><i class="bi bi-cpu"></i> Amortization Sample Check</h3>
-        <div id="cAmortCheck" style="font-size:12px">—</div>
+        <h3><i class="bi bi-bar-chart"></i> ค่าตัดจ่ายงวดนี้ แยกตาม GL</h3>
+        <div class="chart-wrap"><canvas id="glChart"></canvas></div>
       </div>
-    </div>
-  </div>
 
-  <!-- ===== SECTION: VOID ===== -->
-  <div class="section" id="secVoid">
-    <div class="ph"><div class="pt">Void / Terminate</div><div class="ps">ยกเลิกสัญญากลางคัน — คำนวณ remaining balance และสร้าง Void Journal Entry</div></div>
-    
-    <div class="card">
-      <h3><i class="bi bi-search"></i> เลือกเอกสาร</h3>
-      <div class="fg"><label>Doc No</label>
-        <select class="sel" id="voidDocNo" onchange="onVoidDocSelect()" style="font-family:'JetBrains Mono',mono;max-width:100%">
-          <option value="">— เลือกเลขที่ DOC —</option>
-        </select>
-      </div>
-      <div id="voidDocInfo" class="hidden" style="margin-top:10px">
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kv" id="vDocNo">—</div><div class="kl">Doc No</div></div>
-          <div class="kpi bl"><div class="kv" id="vAmount">—</div><div class="kl">ยอดรวม</div></div>
-          <div class="kpi gn"><div class="kv" id="vAmortized">—</div><div class="kl">ตัดจ่ายแล้ว</div></div>
-          <div class="kpi rd"><div class="kv" id="vRemaining">—</div><div class="kl">คงเหลือ</div></div>
-        </div>
-        <div style="font-size:11px;color:var(--mt);margin-top:4px">
-          <span id="vDesc"></span> · <span id="vPlate"></span> · 
-          IO: <span id="vIo" style="font-family:JetBrains Mono,mono"></span> · 
-          GL: <span id="vGl" style="font-family:JetBrains Mono,mono"></span>
+      <!-- Tables Section -->
+      <div class="card">
+        <h3><i class="bi bi-clock"></i> Expiring Soon — Top 10 (S-12)</h3>
+        <div class="tw" style="max-height:300px;overflow:auto">
+          <table class="tb">
+            <thead><tr><th>Doc No</th><th>Description</th><th>End Date</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead>
+            <tbody id="expiringSoonBody"><tr><td colspan="5" style="text-align:center;color:var(--mt)">Loading...</td></tr></tbody>
+          </table>
         </div>
       </div>
-      <div id="loaderVoidDoc" class="loader hidden">⏳ กำลังโหลด...</div>
-    </div>
-    
-    <div class="card" id="voidFormCard" style="display:none">
-      <h3><i class="bi bi-pencil"></i> รายละเอียดการยกเลิก</h3>
-      <div class="fg">
-        <label>Void Date</label>
-        <input class="fi" id="voidDate" type="date" style="max-width:200px;font-family:'Prompt',sans-serif">
-      </div>
-      <div class="fg">
-        <label>ประเภท</label>
-        <select class="sel" id="voidType" onchange="onVoidTypeChange()" style="max-width:200px">
-          <option value="refund">คืนเงิน (Refund)</option>
-          <option value="loss">ตัดสูญ (Loss)</option>
-        </select>
-      </div>
-      <div class="fg hidden" id="voidLossGlRow">
-        <label>Loss GL</label>
-        <input class="fi" id="voidLossGL" value="51990010" style="max-width:200px;font-family:JetBrains Mono,mono">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-pri" onclick="voidPreview()"><i class="bi bi-eye"></i> Preview</button>
-        <button class="btn btn-rd" onclick="voidExecute()"><i class="bi bi-x-circle"></i> Execute Void</button>
-      </div>
-    </div>
-    
-    <div id="loaderVoid" class="loader hidden">⏳ กำลังดำเนินการ...</div>
-    <div class="result-box" id="resultVoid"></div>
-    
-    <div class="card" id="voidResultCard" style="display:none">
-      <h3><i class="bi bi-journal-text"></i> Void Journal Entry</h3>
-      <div class="tw">
-        <table class="tb">
-          <thead><tr><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>Description</th></tr></thead>
-          <tbody id="voidJeBody"></tbody>
-        </table>
-      </div>
-      <div class="btn-row" style="margin-top:10px" id="voidResultLinks"></div>
-    </div>
-  </div>
 
-  <!-- ===== SECTION: SETTINGS ===== -->
-  <div class="section" id="secSettings">
-    <div class="ph"><div class="pt">Settings</div><div class="ps">ตั้งค่าระบบ</div></div>
-    <div class="card">
-      <h3><i class="bi bi-gear"></i> ตั้งค่าทั่วไป</h3>
-      <div class="fg"><label>Company</label><input class="fi" id="sCompany" value="1022"></div>
-      <div class="fg"><label>Prepaid GL</label><input class="fi" id="sPrepaidGL" value="11370010"></div>
-      <div class="fg"><label>Doc Type</label><input class="fi" id="sDocType" value="SA"></div>
-      <div class="fg"><label>Currency</label><input class="fi" id="sCurrency" value="THB"></div>
-      <div class="fg"><label>Max Lines/JE</label><input class="fi" id="sMaxLines" value="900"></div>
-      <div class="fg"><label>วิธีปัด Rate</label>
-        <select class="sel" id="sRounding">
-          <option value="4dec">ปัด 4 ตำแหน่ง</option>
-          <option value="full">เต็มความละเอียด</option>
-        </select>
+      <div class="card">
+        <h3><i class="bi bi-shield-exclamation"></i> Data Quality Issues (S-13)</h3>
+        <div id="dataQualityBody" style="font-size:12px">Loading...</div>
       </div>
-      <div class="btn-row"><button class="btn btn-pri" onclick="saveSettings()"><i class="bi bi-save"></i> Save</button></div>
+
+      <div class="card">
+        <h3><i class="bi bi-activity"></i> Data Freshness (S-14)</h3>
+        <div id="dataFreshnessBody" style="font-size:12px">Loading...</div>
+      </div>
     </div>
+
+    <!-- ===== SECTION: AMORTIZATION ===== -->
+    <div class="section" id="secAmort">
+      <div class="ph"><div class="pt">Run Amortization</div><div class="ps">คำนวณตัดจ่ายรายเดือน</div></div>
+      <div class="card">
+        <div class="fg"><label>งวด</label><input class="fi" id="amortPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด"></div>
+        <div class="btn-row">
+          <button class="btn btn-gn" onclick="runAmort()"><i class="bi bi-play-fill"></i> Run</button>
+        </div>
+        <div id="loaderAmort" class="loader hidden">⏳ กำลังคำนวณ...</div>
+        <div class="result-box" id="resultAmort"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: SCHEDULE ===== -->
+    <div class="section" id="secSchedule">
+      <div class="ph"><div class="pt">Amortization Schedule</div><div class="ps">ตารางตัดจ่ายแบบ Wide Format — 1 รายการ/แถว 🟦</div></div>
+      <div class="card">
+        <div class="fg"><label>งวด</label>
+          <input class="fi" id="schedPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-pri" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>
+          <button class="btn btn-gn" onclick="exportWide()"><i class="bi bi-file-spreadsheet"></i> Export to Sheet</button>
+        </div>
+        <div id="loaderWide" class="loader hidden">⏳ กำลังโหลด...</div>
+        <div class="result-box" id="resultWide"></div>
+        <div class="tw" style="margin-top:10px;max-height:400px;overflow:auto">
+          <table class="tb" id="wideTable">
+            <thead id="wideHead"></thead>
+            <tbody id="wideBody"><tr><td style="color:var(--mt);text-align:center">กด Preview เพื่อดูข้อมูล</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: SAP ===== -->
+    <div class="section" id="secSap">
+      <div class="ph"><div class="pt">SAP Generator</div><div class="ps">สร้าง Journal Entry — Debit(IO/40) / Credit(GL/50) · 900 lines/JE</div></div>
+      <div class="card">
+        <div class="fg"><label>งวด</label><input class="fi" id="sapPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px"></div>
+        <div class="btn-row">
+          <button class="btn btn-pri" onclick="previewSAPJE()"><i class="bi bi-eye"></i> Preview</button>
+          <button class="btn btn-gn" onclick="exportSAPJE()"><i class="bi bi-file-earmark-excel"></i> Generate & Export</button>
+        </div>
+        <div id="loaderSAP" class="loader hidden">⏳ กำลังสร้าง...</div>
+        <div class="result-box" id="resultSAP"></div>
+        <div class="tw" style="margin-top:10px">
+          <table class="tb" id="sapTable">
+            <thead><tr><th>Doc</th><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>IO</th><th>Description</th></tr></thead>
+            <tbody id="sapBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด Preview เพื่อดูตัวอย่าง</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: CHECKER ===== -->
+    <div class="section" id="secChecker">
+      <div class="ph"><div class="pt">Pre-Upload Checker</div><div class="ps">ตรวจสอบข้อมูลก่อน Export SAP — ระบบจะเช็คความถูกต้องของข้อมูลทั้งหมด</div></div>
+      <div class="card">
+        <h3><i class="bi bi-shield-check"></i> Validation Checks (10 รายการ)</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:12px">
+          <div>✅ 1. Doc No ครบ</div>
+          <div>✅ 2. Doc No ซ้ำ</div>
+          <div>✅ 3. IO ครบ</div>
+          <div>✅ 4. GL ครบ</div>
+          <div>✅ 5. วันที่เริ่มต้น</div>
+          <div>✅ 6. วันที่สิ้นสุด</div>
+          <div>✅ 7. วันที่เริ่มต้น ≤ สิ้นสุด</div>
+          <div>✅ 8. วันที่สิ้นสุดผ่านไปแล้ว</div>
+          <div>✅ 9. ยอดเงิน > 0</div>
+          <div>✅ 10. Amortization มียอดคงเหลือ</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-pri" onclick="runChecker()"><i class="bi bi-play-fill"></i> Run Check</button>
+        </div>
+      </div>
+      <div id="loaderChecker" class="loader hidden">⏳ กำลังตรวจสอบข้อมูล 3,979 รายการ...</div>
+      <div id="checkerResult" style="display:none">
+        <div class="card" id="checkerSummary">
+          <h3><i class="bi bi-clipboard-data"></i> Result Summary</h3>
+          <div class="kpi-grid">
+            <div class="kpi"><div class="kv" id="cTotalItems">—</div><div class="kl">รายการที่เช็ค</div></div>
+            <div class="kpi gn"><div class="kv" id="cPassed">—</div><div class="kl">ผ่าน</div></div>
+            <div class="kpi rd"><div class="kv" id="cErrors">—</div><div class="kl">Errors</div></div>
+            <div class="kpi bl"><div class="kv" id="cWarnings">—</div><div class="kl">Warnings</div></div>
+          </div>
+          <div id="cStatusBadge" style="margin-top:8px"></div>
+        </div>
+        <div class="card" id="checkerErrorCard" style="display:none">
+          <h3 style="color:var(--rd)"><i class="bi bi-x-circle"></i> Errors</h3>
+          <div class="tw" style="max-height:300px;overflow:auto">
+            <table class="tb">
+              <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+              <tbody id="cErrorBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card" id="checkerWarnCard" style="display:none">
+          <h3 style="color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> Warnings</h3>
+          <div class="tw" style="max-height:300px;overflow:auto">
+            <table class="tb">
+              <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+              <tbody id="cWarnBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3><i class="bi bi-cpu"></i> Amortization Sample Check</h3>
+          <div id="cAmortCheck" style="font-size:12px">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: VOID ===== -->
+    <div class="section" id="secVoid">
+      <div class="ph"><div class="pt">Void / Terminate</div><div class="ps">ยกเลิกสัญญากลางคัน — คำนวณ remaining balance และสร้าง Void Journal Entry</div></div>
+      <div class="card">
+        <h3><i class="bi bi-search"></i> เลือกเอกสาร</h3>
+        <div class="fg"><label>Doc No</label>
+          <select class="sel" id="voidDocNo" onchange="onVoidDocSelect()" style="font-family:'JetBrains Mono',mono;max-width:100%">
+            <option value="">— เลือกเลขที่ DOC —</option>
+          </select>
+        </div>
+        <div id="voidDocInfo" class="hidden" style="margin-top:10px">
+          <div class="kpi-grid">
+            <div class="kpi"><div class="kv" id="vDocNo">—</div><div class="kl">Doc No</div></div>
+            <div class="kpi bl"><div class="kv" id="vAmount">—</div><div class="kl">ยอดรวม</div></div>
+            <div class="kpi gn"><div class="kv" id="vAmortized">—</div><div class="kl">ตัดจ่ายแล้ว</div></div>
+            <div class="kpi rd"><div class="kv" id="vRemaining">—</div><div class="kl">คงเหลือ</div></div>
+          </div>
+          <div style="font-size:11px;color:var(--mt);margin-top:4px">
+            <span id="vDesc"></span> · <span id="vPlate"></span> · 
+            IO: <span id="vIo" style="font-family:JetBrains Mono,mono"></span> · 
+            GL: <span id="vGl" style="font-family:JetBrains Mono,mono"></span>
+          </div>
+        </div>
+        <div id="loaderVoidDoc" class="loader hidden">⏳ กำลังโหลด...</div>
+      </div>
+      <div class="card" id="voidFormCard" style="display:none">
+        <h3><i class="bi bi-pencil"></i> รายละเอียดการยกเลิก</h3>
+        <div class="fg">
+          <label>Void Date</label>
+          <input class="fi" id="voidDate" type="date" style="max-width:200px;font-family:'Prompt',sans-serif">
+        </div>
+        <div class="fg">
+          <label>ประเภท</label>
+          <select class="sel" id="voidType" onchange="onVoidTypeChange()" style="max-width:200px">
+            <option value="refund">คืนเงิน (Refund)</option>
+            <option value="loss">ตัดสูญ (Loss)</option>
+          </select>
+        </div>
+        <div class="fg hidden" id="voidLossGlRow">
+          <label>Loss GL</label>
+          <input class="fi" id="voidLossGL" value="51990010" style="max-width:200px;font-family:JetBrains Mono,mono">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-pri" onclick="voidPreview()"><i class="bi bi-eye"></i> Preview</button>
+          <button class="btn btn-rd" onclick="voidExecute()"><i class="bi bi-x-circle"></i> Execute Void</button>
+        </div>
+      </div>
+      <div id="loaderVoid" class="loader hidden">⏳ กำลังดำเนินการ...</div>
+      <div class="result-box" id="resultVoid"></div>
+      <div class="card" id="voidResultCard" style="display:none">
+        <h3><i class="bi bi-journal-text"></i> Void Journal Entry</h3>
+        <div class="tw">
+          <table class="tb">
+            <thead><tr><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>Description</th></tr></thead>
+            <tbody id="voidJeBody"></tbody>
+          </table>
+        </div>
+        <div class="btn-row" style="margin-top:10px" id="voidResultLinks"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: SETTINGS ===== -->
+    <div class="section" id="secSettings">
+      <div class="ph"><div class="pt">Settings</div><div class="ps">ตั้งค่าระบบ</div></div>
+      <div class="card">
+        <h3><i class="bi bi-gear"></i> ตั้งค่าทั่วไป</h3>
+        <div class="fg"><label>Company</label><input class="fi" id="sCompany" value="1022"></div>
+        <div class="fg"><label>Prepaid GL</label><input class="fi" id="sPrepaidGL" value="11370010"></div>
+        <div class="fg"><label>Doc Type</label><input class="fi" id="sDocType" value="SA"></div>
+        <div class="fg"><label>Currency</label><input class="fi" id="sCurrency" value="THB"></div>
+        <div class="fg"><label>Max Lines/JE</label><input class="fi" id="sMaxLines" value="900"></div>
+        <div class="fg"><label>วิธีปัด Rate</label>
+          <select class="sel" id="sRounding">
+            <option value="4dec">ปัด 4 ตำแหน่ง</option>
+            <option value="full">เต็มความละเอียด</option>
+          </select>
+        </div>
+        <div class="btn-row"><button class="btn btn-pri" onclick="saveSettings()"><i class="bi bi-save"></i> Save</button></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION: GUIDE ===== -->
+    <div class="section" id="secGuide">
+      <div class="ph"><div class="pt">📖 User Guide</div><div class="ps">วิธีการใช้งานระบบ Prepaid Expense Amortization — ข้อมูลจาก Input Sheet, การทำงานแต่ละ Tab</div></div>
+      <div id="guideContent" class="loader">Loading...</div>
+    </div>
+
+  </div><!-- /#ct -->
+</div><!-- /#main -->
+
+<!-- ===== BOTTOM NAV (mobile) ===== -->
+<div class="bottom-nav" id="bottomNav">
+  <div class="bn-items">
+    <div class="bn-item on" onclick="go('dashboard')"><span class="bn-ic">◈</span>Dash</div>
+    <div class="bn-item" onclick="go('amort')"><span class="bn-ic">🚀</span>Amort</div>
+    <div class="bn-item" onclick="go('sap')"><span class="bn-ic">📤</span>SAP</div>
+    <div class="bn-item" onclick="go('void')"><span class="bn-ic">⛔</span>Void</div>
+    <div class="bn-item" onclick="go('settings')"><span class="bn-ic">⚙️</span>Settings</div>
   </div>
 </div>
-
-  <!-- ===== SECTION: GUIDE ===== -->
-  <div class="section" id="secGuide">
-    <div class="ph"><div class="pt">📖 User Guide</div><div class="ps">วิธีการใช้งานระบบ Prepaid Expense Amortization — ข้อมูลจาก Input Sheet, การทำงานแต่ละ Tab</div></div>
-    <div id="guideContent" class="loader">Loading...</div>
-  </div>
+</div><!-- /#app -->
 
 <div class="toast-container" id="toastContainer"></div>
 
@@ -349,33 +488,127 @@ function toggleDark() {
   document.getElementById('darkIcon').className='bi bi-sun';}})();
 
 // ========== HELPERS ==========
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;')}
 function fmt(n){if(n===undefined||n===null)return'—';return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function toast(msg,type){var c=document.getElementById('toastContainer'),t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;c.appendChild(t);setTimeout(function(){t.remove()},3000)}
+function tost(msg,type){var c=document.getElementById('toastContainer'),t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;c.appendChild(t);setTimeout(function(){t.remove()},3000)}
+function toast(msg,type){tost(msg,type)}
 function showResult(id, html){var el=document.getElementById(id);el.innerHTML=html;el.classList.add('show')}
 var chartInstances={};
 
-// ========== TABS ==========
-function switchTab(tab){
+// ========== NAVIGATION ==========
+function go(p){
+  // Convert page name to section id: first letter uppercase
+  var sectionId = 'sec' + p.charAt(0).toUpperCase() + p.slice(1);
+  var navId = 'nav-' + p;
+  // Hide all sections
   document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
-  document.getElementById('sec'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
-  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on')});
-  document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('on');
-  if(tab==='dashboard')loadDashboard();
-  if(tab==='void')loadVoidDocs();
-  if(tab==='guide')loadGuide();
+  // Show target section
+  var secEl = document.getElementById(sectionId);
+  if(secEl) secEl.classList.add('active');
+  // Update sidebar nav
+  document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('on')});
+  var navEl = document.getElementById(navId);
+  if(navEl) navEl.classList.add('on');
+  // Update bottom nav
+  document.querySelectorAll('.bn-item').forEach(function(b){b.classList.remove('on')});
+  var bnMap = {dashboard:0, amort:1, sap:2, void:3, settings:4};
+  var bnIdx = bnMap[p];
+  if(bnIdx !== undefined){
+    var items = document.querySelectorAll('.bn-item');
+    if(items[bnIdx]) items[bnIdx].classList.add('on');
+  }
+  // Close mobile nav
+  if(window.innerWidth <= 768){
+    var nav = document.querySelector('nav');
+    if(nav) nav.classList.remove('open');
+    var overlay = document.getElementById('navOverlay');
+    if(overlay) overlay.classList.remove('show');
+  }
+  // Load page-specific data
+  if(p==='dashboard') loadDashboard();
+  if(p==='void') loadVoidDocs();
+  if(p==='guide') loadGuide();
 }
+// Backward compatibility: switchTab calls go()
+function switchTab(p){go(p);}
+
+// ========== MOBILE NAV TOGGLE ==========
+function toggleNav(){
+  var nav = document.querySelector('nav');
+  var overlay = document.getElementById('navOverlay');
+  if(nav) nav.classList.toggle('open');
+  if(overlay) overlay.classList.toggle('show');
+}
+function checkMobile(){
+  var hamburger = document.getElementById('hamburger');
+  if(!hamburger) return;
+  if(window.innerWidth <= 768){
+    hamburger.style.display = 'flex';
+  } else {
+    hamburger.style.display = 'none';
+    var nav = document.querySelector('nav');
+    if(nav) nav.classList.remove('open');
+    var overlay = document.getElementById('navOverlay');
+    if(overlay) overlay.classList.remove('show');
+  }
+}
+window.addEventListener('resize', checkMobile);
 
 // ========== LOAD DASHBOARD ==========
 function loadDashboard(){
   google.script.run.withSuccessHandler(function(r){
     if(!r.ok){document.getElementById('dashSub').textContent='Error: '+(r.error||'');return}
+    // Existing KPIs
     document.getElementById('dTotalItems').textContent=r.totalItems.toLocaleString();
     document.getElementById('dTotalAmt').textContent=fmt(r.totalAmortization);
     document.getElementById('dCurPeriod').textContent=r.currentPeriod;
     document.getElementById('dashSub').textContent=r.totalItems.toLocaleString()+' รายการ · '+r.currentPeriod;
     document.getElementById('statusTxt').textContent=r.totalItems+' rec';
     document.getElementById('statusDot').className='dot g';
+    
+    // New KPI Row 1
+    document.getElementById('dActiveItems').textContent=r.activeItems!==undefined?r.activeItems.toLocaleString():'—';
+    document.getElementById('dCompletedItems').textContent='Completed: '+(r.completedItems!==undefined?r.completedItems.toLocaleString():'—');
+    document.getElementById('dTotalRemaining').textContent=r.totalRemaining!==undefined?'฿'+fmt(r.totalRemaining):'—';
+    document.getElementById('dAvgDuration').textContent=r.avgDurationMonths!==undefined?r.avgDurationMonths.toFixed(1):'—';
+    document.getElementById('dExpiringThisMonth').textContent=r.expiringThisMonth!==undefined?r.expiringThisMonth.toLocaleString():'—';
+    if(r.momChange && r.momChange.changePercent !== undefined && r.momChange.changePercent !== null){
+      var momV = r.momChange.changePercent;
+      document.getElementById('dMomChange').textContent=(momV>0?'+':'')+momV.toFixed(1)+'%';
+      document.getElementById('dMomChange').style.color=momV>=0?'var(--gn)':'var(--rd)';
+      document.getElementById('dMomPeriod').textContent=r.momChange.period||'';
+    } else {
+      document.getElementById('dMomChange').textContent='—';
+      document.getElementById('dMomPeriod').textContent='';
+    }
+    
+    // New KPI Row 2 — Largest Item
+    if(r.largestItem){
+      document.getElementById('dLargestItem').textContent=(r.largestItem.docNo||'')+' — '+(r.largestItem.description||'').substring(0,40);
+      document.getElementById('dLargestAmt').textContent='฿'+fmt(r.largestItem.amount);
+    } else {
+      document.getElementById('dLargestItem').textContent='—';
+      document.getElementById('dLargestAmt').textContent='';
+    }
+    // Health Score
+    var hs = r.healthScore !== undefined ? r.healthScore : 0;
+    document.getElementById('dHealthScore').textContent=hs+'%';
+    var bar = document.getElementById('dHealthBar');
+    bar.style.width=hs+'%';
+    bar.style.background=hs>=80?'var(--gn)':hs>=50?'var(--gold)':'var(--rd)';
+    
+    // Data Freshness (S-14)
+    var freshnessEl = document.getElementById('dataFreshnessBody');
+    var now = new Date();
+    freshnessEl.innerHTML =
+      '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px">'+
+      '<span style="color:var(--mt)">Last Checked:</span><span>'+now.toLocaleString('th-TH')+'</span>'+
+      '<span style="color:var(--mt)">Data Source:</span><span>Input Sheet ('+(r.totalItems||0)+' records)</span>'+
+      '<span style="color:var(--mt)">Refresh:</span><span>Auto (5-min cache)</span>'+
+      '<span style="color:var(--mt)">Status:</span><span><span class="dot g" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> Online</span>'+
+      '</div>';
+    
+    // Render all charts
     renderCharts(r);
   }).withFailureHandler(function(e){
     document.getElementById('dashSub').textContent='Error: '+e.message;
@@ -384,61 +617,267 @@ function loadDashboard(){
   }).getDashboardData();
 }
 
+// ========== RENDER CHARTS ==========
 function renderCharts(r){
-  if(!r.trend||r.trend.length===0){document.querySelector('#secDashboard .chart-wrap').innerHTML='<div style="text-align:center;padding:60px;color:var(--mt)">No data</div>';return}
   destroyCharts();
-  var ctx=document.getElementById('trendChart').getContext('2d');
   var isLight=document.body.classList.contains('light');
   var gridColor=isLight?'rgba(0,0,0,.06)':'rgba(255,255,255,.06)';
   var tickColor=isLight?'#88827a':'#676460';
-
-  chartInstances.trend=new Chart(ctx,{
-    type:'line',
-    data:{
-      labels:r.trend.map(function(t){return t.period}),
-      datasets:[{
-        label:'Amortization',
-        data:r.trend.map(function(t){return t.amount}),
-        borderColor:'#C9A96E',
-        backgroundColor:'rgba(201,169,110,.08)',
-        fill:true,tension:.3,pointRadius:3,pointHoverRadius:5
-      }]
-    },
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false}},
-      scales:{
-        x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
-        y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
-      }
-    }
-  });
-
-  if(r.glBreakdown&&r.glBreakdown.length>0){
-    var glCtx=document.getElementById('glChart').getContext('2d');
-    var glLabels=r.glBreakdown.slice(0,10).map(function(g){return g.gl});
-    var glData=r.glBreakdown.slice(0,10).map(function(g){return g.amount});
-    chartInstances.gl=new Chart(glCtx,{
-      type:'bar',
-      data:{
-        labels:glLabels,
-        datasets:[{
-          label:'Amount',
-          data:glData,
-          backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
-          borderRadius:4
-        }]
-      },
-      options:{
-        responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false}},
-        scales:{
-          x:{grid:{display:false},ticks:{color:tickColor,font:{size:10}}},
-          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+  var palette=['rgba(201,169,110,.7)','rgba(88,136,187,.7)','rgba(58,159,101,.7)','rgba(184,82,82,.7)','rgba(128,112,204,.7)',
+    'rgba(201,169,110,.5)','rgba(88,136,187,.5)','rgba(58,159,101,.5)','rgba(184,82,82,.5)','rgba(128,112,204,.5)'];
+  var paletteSolid=['#C9A96E','#5888BB','#3A9F65','#B85252','#8070CC','#C9A96E','#5888BB','#3A9F65','#B85252','#8070CC'];
+  
+  // ---- 1. Trend (existing) ----
+  if(r.trend && r.trend.length>0){
+    var ctx=document.getElementById('trendChart');
+    if(ctx){
+      ctx=ctx.getContext('2d');
+      chartInstances.trend=new Chart(ctx,{
+        type:'line',
+        data:{
+          labels:r.trend.map(function(t){return t.period}),
+          datasets:[{
+            label:'Amortization',
+            data:r.trend.map(function(t){return t.amount}),
+            borderColor:'#C9A96E',
+            backgroundColor:'rgba(201,169,110,.08)',
+            fill:true,tension:.3,pointRadius:3,pointHoverRadius:5
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
+            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+          }
         }
-      }
-    });
+      });
+    }
   }
+  
+  // ---- 2. GL Breakdown (existing) ----
+  if(r.glBreakdown && r.glBreakdown.length>0){
+    var glCtx=document.getElementById('glChart');
+    if(glCtx){
+      glCtx=glCtx.getContext('2d');
+      var glLabels=r.glBreakdown.slice(0,10).map(function(g){return g.gl});
+      var glData=r.glBreakdown.slice(0,10).map(function(g){return g.amount});
+      chartInstances.gl=new Chart(glCtx,{
+        type:'bar',
+        data:{
+          labels:glLabels,
+          datasets:[{
+            label:'Amount',data:glData,
+            backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
+            borderRadius:4
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{grid:{display:false},ticks:{color:tickColor,font:{size:10}}},
+            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+          }
+        }
+      });
+    }
+  }
+  
+  // ---- 3. Accumulated Trend (S-10) ----
+  if(r.accumulatedTrend && r.accumulatedTrend.length>0){
+    var accCtx=document.getElementById('lineAccumTrend');
+    if(accCtx){
+      accCtx=accCtx.getContext('2d');
+      chartInstances.lineAccumTrend=new Chart(accCtx,{
+        type:'line',
+        data:{
+          labels:r.accumulatedTrend.map(function(t){return t.period}),
+          datasets:[{
+            label:'Accumulated',
+            data:r.accumulatedTrend.map(function(t){return t.accumulated}),
+            borderColor:'#5888BB',
+            backgroundColor:'rgba(88,136,187,.08)',
+            fill:true,tension:.3,pointRadius:2,pointHoverRadius:4
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
+            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+          }
+        }
+      });
+    }
+  }
+  
+  // ---- 4. Stacked Bar by Cost Center (S-7) ----
+  if(r.ccBreakdown && r.ccBreakdown.length>0){
+    var ccCtx=document.getElementById('stackedBarCC');
+    if(ccCtx){
+      ccCtx=ccCtx.getContext('2d');
+      // Group by period, stack by cost center
+      var ccByPeriod = {};
+      var ccNames = {};
+      r.ccBreakdown.forEach(function(d){
+        if(!ccByPeriod[d.period]) ccByPeriod[d.period]={};
+        ccByPeriod[d.period][d.cc]=d.amount;
+        ccNames[d.cc]=true;
+      });
+      var periodLabels = Object.keys(ccByPeriod).sort();
+      var uniqueCCs = Object.keys(ccNames).sort();
+      var colorIdx=0;
+      var datasets = uniqueCCs.slice(0,8).map(function(cc){
+        var c = paletteSolid[colorIdx % paletteSolid.length];
+        colorIdx++;
+        return {
+          label: cc,
+          data: periodLabels.map(function(per){ return ccByPeriod[per][cc] || 0; }),
+          backgroundColor: c,
+          borderColor: 'transparent'
+        };
+      });
+      // If many CCs, group remaining as "Other"
+      if(uniqueCCs.length>8){
+        var otherData = periodLabels.map(function(per){
+          var sum=0;
+          for(var i=8;i<uniqueCCs.length;i++) sum += ccByPeriod[per][uniqueCCs[i]] || 0;
+          return sum;
+        });
+        datasets.push({label:'Other',data:otherData,backgroundColor:'rgba(103,100,96,.4)',borderColor:'transparent'});
+      }
+      chartInstances.stackedBarCC=new Chart(ccCtx,{
+        type:'bar',
+        data:{labels:periodLabels,datasets:datasets},
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{stacked:true,grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
+            y:{stacked:true,grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}}
+          }
+        }
+      });
+    }
+  }
+  
+  // ---- 5. Pie by Company (S-8) ----
+  if(r.companyBreakdown && r.companyBreakdown.length>0){
+    var pieCtx=document.getElementById('pieCompany');
+    if(pieCtx){
+      pieCtx=pieCtx.getContext('2d');
+      var coLabels=r.companyBreakdown.slice(0,8).map(function(c){return c.company});
+      var coData=r.companyBreakdown.slice(0,8).map(function(c){return c.amount});
+      chartInstances.pieCompany=new Chart(pieCtx,{
+        type:'pie',
+        data:{
+          labels:coLabels,
+          datasets:[{
+            data:coData,
+            backgroundColor:['rgba(201,169,110,.7)','rgba(88,136,187,.7)','rgba(58,159,101,.7)','rgba(184,82,82,.7)','rgba(128,112,204,.7)','rgba(201,169,110,.4)','rgba(88,136,187,.4)','rgba(58,159,101,.4)'],
+            borderColor:'transparent'
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:'bottom',labels:{color:tickColor,font:{size:9},boxWidth:10,padding:8}}}
+        }
+      });
+    }
+  }
+  
+  // ---- 6. Active Items by Month (S-9) ----
+  if(r.activeItemsByMonth && r.activeItemsByMonth.length>0){
+    var abmCtx=document.getElementById('barActiveItems');
+    if(abmCtx){
+      abmCtx=abmCtx.getContext('2d');
+      var abmLabels=r.activeItemsByMonth.map(function(a){return a.period});
+      var abmData=r.activeItemsByMonth.map(function(a){return a.count});
+      chartInstances.barActiveItems=new Chart(abmCtx,{
+        type:'bar',
+        data:{
+          labels:abmLabels,
+          datasets:[{
+            label:'Active Items',data:abmData,
+            backgroundColor:'rgba(58,159,101,.6)',
+            borderRadius:3
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
+            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},stepSize:1}}
+          }
+        }
+      });
+    }
+  }
+  
+  // ---- 7. Top 10 IO (S-11) ----
+  if(r.ioBreakdown && r.ioBreakdown.length>0){
+    var ioCtx=document.getElementById('barIoTop10');
+    if(ioCtx){
+      ioCtx=ioCtx.getContext('2d');
+      var ioLabels=r.ioBreakdown.slice(0,10).map(function(i){return i.io});
+      var ioData=r.ioBreakdown.slice(0,10).map(function(i){return i.amount});
+      chartInstances.barIoTop10=new Chart(ioCtx,{
+        type:'bar',
+        data:{
+          labels:ioLabels,
+          datasets:[{
+            label:'Amount',data:ioData,
+            backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
+            borderRadius:4
+          }]
+        },
+        options:{
+          responsive:true,maintainAspectRatio:false,
+          indexAxis:'y',
+          plugins:{legend:{display:false}},
+          scales:{
+            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}},
+            y:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}}
+          }
+        }
+      });
+    }
+  }
+  
+  // ---- Tables ----
+  // Expiring Soon (S-12)
+  var expBody = document.getElementById('expiringSoonBody');
+  if(r.expiringSoon && r.expiringSoon.length>0){
+    expBody.innerHTML = r.expiringSoon.map(function(e){
+      return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(e.docNo)+'</td>'+
+        '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">'+esc((e.description||'').substring(0,35))+'</td>'+
+        '<td>'+esc(e.endDate)+'</td>'+
+        '<td class="num">฿'+fmt(e.amount)+'</td>'+
+        '<td class="num">฿'+fmt(e.remaining)+'</td></tr>';
+    }).join('');
+  } else {
+    expBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">No data</td></tr>';
+  }
+  
+  // Data Quality (S-13)
+  var dq = r.dataQuality || {};
+  var dqEl = document.getElementById('dataQualityBody');
+  dqEl.innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">'+
+    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
+    '<div style="font-size:16px;font-weight:500;color:var(--rd)">'+(dq.missingIO||0)+'</div><div style="font-size:10px;color:var(--mt)">Missing IO</div></div>'+
+    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
+    '<div style="font-size:16px;font-weight:500;color:var(--rd)">'+(dq.missingGL||0)+'</div><div style="font-size:10px;color:var(--mt)">Missing GL</div></div>'+
+    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
+    '<div style="font-size:16px;font-weight:500;color:var(--gold)">'+(dq.invalidDates||0)+'</div><div style="font-size:10px;color:var(--mt)">Invalid Dates</div></div>'+
+    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
+    '<div style="font-size:16px;font-weight:500;color:var(--gold)">'+(dq.zeroAmounts||0)+'</div><div style="font-size:10px;color:var(--mt)">Zero Amounts</div></div>'+
+    '</div>'+
+    '<div style="font-size:10px;color:var(--mt);text-align:right">Valid: '+(r.totalItems||0)+' items checked</div>';
 }
 
 function destroyCharts(){
@@ -474,7 +913,6 @@ function runAmort(){
           }).join('')+'</tbody></table></div>';
       }
       el.innerHTML=html;
-      // Also populate schedule table
       if(r.sample) populateSchedule(r.sample);
       toast('✅ '+r.message,'ok');
     }else{
@@ -559,7 +997,7 @@ function exportSAPJE(){
       showResult('resultSAP',html);
       toast('✅ SAP JE ready','ok');
     }else{
-      showResult('resultSAP','<div class="al al-er">'+(r.error||'Error')+'</div>');
+      showResult('resultSAP','<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>');
     }
   }).withFailureHandler(function(e){
     document.getElementById('loaderSAP').classList.add('hidden');
@@ -578,7 +1016,6 @@ function loadWidePreview(){
     if(!r.ok){showResult('resultWide','<div class="al al-er">'+r.error+'</div>');return}
     var thead=document.getElementById('wideHead');
     var tbody=document.getElementById('wideBody');
-    // Render header with blue style for month columns
     var headHtml='<tr>';
     for(var i=0;i<r.headers.length;i++){
       var isMonth=i>=r.baseCount;
@@ -586,7 +1023,6 @@ function loadWidePreview(){
     }
     headHtml+='</tr>';
     thead.innerHTML=headHtml;
-    // Render rows
     if(!r.rows||r.rows.length===0){
       tbody.innerHTML='<tr><td colspan="'+r.headers.length+'" style="text-align:center;color:var(--mt)">No data</td></tr>';
       return;
@@ -629,14 +1065,12 @@ function loadGuide(){
   google.script.run.withSuccessHandler(function(r){
     if(!r.ok){document.getElementById('guideContent').innerHTML='<div class="al al-er">'+(r.error||'Error')+'</div>';return}
     var html='';
-    // System info
     html+='<div class="card"><h3><i class="bi bi-info-circle"></i> เกี่ยวกับระบบ</h3>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">'+
       '<div><strong>ชื่อระบบ:</strong> '+esc(r.system.name)+'</div>'+
       '<div><strong>เวอร์ชัน:</strong> '+esc(r.system.version)+'</div>'+
       '<div><strong>Runtime:</strong> '+esc(r.system.runtime)+'</div>'+
       '</div></div>';
-    // Data Sources
     html+='<div class="card"><h3><i class="bi bi-database"></i> แหล่งข้อมูล (Data Sources)</h3>';
     for(var d=0;d<r.dataSources.length;d++){
       var ds=r.dataSources[d];
@@ -655,7 +1089,6 @@ function loadGuide(){
       }
     }
     html+='</div>';
-    // Tabs
     html+='<div class="card"><h3><i class="bi bi-grid"></i> เมนูการใช้งาน (Tabs)</h3>';
     for(var t=0;t<r.tabs.length;t++){
       var tab=r.tabs[t];
@@ -680,11 +1113,9 @@ function loadGuide(){
       html+='</div>';
     }
     html+='</div>';
-    // Tech notes
     html+='<div class="card"><h3><i class="bi bi-gear"></i> Technical Notes</h3><ul style="margin:0;padding-left:16px;font-size:11px;line-height:1.8">';
     for(var n=0;n<r.techNotes.length;n++) html+='<li>'+esc(r.techNotes[n])+'</li>';
     html+='</ul></div>';
-    
     document.getElementById('guideContent').innerHTML=html;
   }).withFailureHandler(function(e){
     document.getElementById('guideContent').innerHTML='<div class="al al-er">'+e.message+'</div>';
@@ -726,18 +1157,15 @@ function runChecker(){
     document.getElementById('loaderChecker').classList.add('hidden');
     if(!r.ok){toast('❌ '+r.error,'er');return}
     document.getElementById('checkerResult').style.display='block';
-    // Summary
     document.getElementById('cTotalItems').textContent=r.totalItems.toLocaleString();
     document.getElementById('cPassed').textContent=(r.totalItems - r.errorCount).toLocaleString();
     document.getElementById('cErrors').textContent=r.errorCount.toLocaleString();
     document.getElementById('cWarnings').textContent=r.warningCount.toLocaleString();
-    // Status badge
     var badge='';
     if(r.status==='PASS')badge='<span class="al al-ok"><i class="bi bi-check-circle"></i> ✅ PASS — ข้อมูลพร้อม Export</span>';
     else if(r.status==='WARN')badge='<span class="al" style="background:rgba(201,169,110,.07);border-color:rgba(201,169,110,.18);color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> ⚠️ PASS WITH WARNINGS — ควรตรวจสอบก่อน Export</span>';
     else badge='<span class="al al-er"><i class="bi bi-x-circle"></i> ❌ FAIL — แก้ไข Errors ก่อน Export</span>';
     document.getElementById('cStatusBadge').innerHTML=badge;
-    // Errors table
     if(r.errors&&r.errors.length>0){
       document.getElementById('checkerErrorCard').style.display='block';
       document.getElementById('cErrorBody').innerHTML=r.errors.map(function(e){
@@ -746,7 +1174,6 @@ function runChecker(){
     } else {
       document.getElementById('checkerErrorCard').style.display='none';
     }
-    // Warnings table
     if(r.warnings&&r.warnings.length>0){
       document.getElementById('checkerWarnCard').style.display='block';
       document.getElementById('cWarnBody').innerHTML=r.warnings.map(function(w){
@@ -755,7 +1182,6 @@ function runChecker(){
     } else {
       document.getElementById('checkerWarnCard').style.display='none';
     }
-    // Amort check
     var ac=r.amortCheck||{};
     document.getElementById('cAmortCheck').innerHTML='สุ่มตรวจ <strong>'+ac.checked+'</strong> รายการ · พบ <strong>'+ac.mismatched+'</strong> รายการที่มียอดคงเหลือไม่ตรง';
     toast('✅ Check completed: '+r.errorCount+' errors, '+r.warningCount+' warnings','ok');
@@ -796,7 +1222,6 @@ function onVoidDocSelect(){
     document.getElementById('vGl').textContent=r.glPrepaid||'—';
     document.getElementById('voidDocInfo').classList.remove('hidden');
     document.getElementById('voidFormCard').style.display='block';
-    // Set default void date to today
     var today=new Date().toISOString().slice(0,10);
     document.getElementById('voidDate').value=today;
   }).getDocDetail(docNo);
@@ -817,13 +1242,11 @@ function voidPreview(){
   google.script.run.withSuccessHandler(function(r){
     document.getElementById('loaderVoid').classList.add('hidden');
     if(!r.ok){showResult('resultVoid','<div class="al al-er"><i class="bi bi-x-circle"></i> '+r.error+'</div>');return}
-    // Show preview
     var remaining=r.amount||0;
     var typeLabel=type==='refund'?'💰 Refund (คืนเงิน)':'📉 Loss (ตัดสูญ)';
     var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> <strong>'+typeLabel+'</strong> — '+
       esc(docNo)+' · จำนวนคงเหลือ: <strong>฿'+fmt(remaining)+'</strong></div>';
     showResult('resultVoid',html);
-    // Show JE preview
     var tb=document.getElementById('voidJeBody');
     tb.innerHTML='<tr><td>1</td><td style="font-family:JetBrains Mono,mono">'+(type==='refund'?r.glPrepaid||'—':lossGL)+'</td>'+
       '<td class="num">฿'+fmt(remaining)+'</td><td class="num"></td><td>'+(type==='refund'?'40':'50')+'</td>'+
@@ -859,12 +1282,12 @@ function voidExecute(){
       '</div>';
     showResult('resultVoid',html);
     toast('✅ Void completed','ok');
-    // Disable form
     document.getElementById('voidFormCard').style.display='none';
   }).voidPrepaid({docNo:docNo, voidDate:voidDate, type:type, lossGL:lossGL});
 }
 (function init(){
-  google.charts={}; // dummy to prevent error if google.charts is referenced
+  google.charts={};
+  checkMobile();
   loadDashboard();
   loadSettings();
 })();

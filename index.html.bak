@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amort — Prepaid Expense Amortization System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&family=DM+Serif+Display:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{--bg:#080809;--sf:#0E0E10;--card:#111113;--card2:#161618;--bdr:rgba(255,255,255,.07);--gold:#C9A96E;--tx:#ECEBE6;--mt:#676460;--gn:#3A9F65;--rd:#B85252;--bl:#5888BB;--r:8px}
+    .light{--bg:#f5f3f0;--sf:#ffffff;--card:#ffffff;--card2:#f0ede8;--bdr:rgba(0,0,0,.10);--tx:#1a1a1a;--mt:#88827a}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Prompt',sans-serif;background:var(--bg);color:var(--tx);transition:background .25s,color .25s}
+    header{height:52px;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--sf);border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:100}
+    .h-logo{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+    .h-logo:hover .h-icon{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.16)}
+    .h-icon{width:28px;height:28px;border-radius:5px;background:rgba(201,169,110,.10);border:1px solid rgba(201,169,110,.22);display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+    .h-name{font-family:'DM Serif Display',serif;font-size:15px;color:var(--tx)}
+    .h-sub{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.10em}
+    .sp{flex:1}
+    .chip{display:flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid var(--bdr);border-radius:4px;font-size:10px;color:var(--mt);cursor:pointer;transition:.15s}
+    .chip:hover{background:rgba(255,255,255,.04)}
+    .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+    .dot.g{background:var(--gn)}.dot.y{background:var(--gold)}.dot.r{background:var(--rd)}
+    #main{max-width:1200px;margin:0 auto;padding:20px}
+    .section{display:none}.section.active{display:block}
+    .ph{margin-bottom:20px}
+    .pt{font-family:'DM Serif Display',serif;font-size:26px;color:var(--tx)}
+    .ps{font-size:12px;color:var(--mt);margin-top:4px}
+    .card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:20px;margin-bottom:16px}
+    .card h3{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+    .kpi{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px 16px;border-left:2px solid var(--gold);transition:background .25s}
+    .kpi.bl{border-left-color:var(--bl)}.kpi.gn{border-left-color:var(--gn)}.kpi.rd{border-left-color:var(--rd)}
+    .kv{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500;color:var(--tx)}
+    .kl{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+    .ks{font-size:10px;color:var(--mt);margin-top:2px}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;font-family:'Prompt',sans-serif}
+    .btn-pri{background:rgba(201,169,110,.10);border-color:rgba(201,169,110,.28);color:var(--gold)}
+    .btn-pri:hover{background:rgba(201,169,110,.18);border-color:rgba(201,169,110,.45)}
+    .btn-rd{background:rgba(184,82,82,.08);border-color:rgba(184,82,82,.22);color:var(--rd)}
+    .btn-rd:hover{background:rgba(184,82,82,.16)}
+    .btn-gn{background:rgba(58,159,101,.08);border-color:rgba(58,159,101,.22);color:var(--gn)}
+    .btn-ghost{background:transparent;border-color:var(--bdr);color:var(--mt)}
+    .btn-ghost:hover{background:rgba(255,255,255,.04);color:var(--tx)}
+    .btn-sm{padding:5px 10px;font-size:10px}
+    .btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+    .tab{padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;border:1px solid transparent;color:var(--mt);background:transparent;font-family:'Prompt',sans-serif}
+    .tab:hover{background:rgba(255,255,255,.03);color:var(--tx)}
+    .tab.on{background:rgba(201,169,110,.10);border-color:rgba(201,169,110,.28);color:var(--gold);font-weight:500}
+    .fg{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-bottom:10px}
+    .fg label{font-size:11px;color:var(--mt)}
+    .fi{padding:7px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;font-family:'JetBrains Mono',monospace;outline:none;transition:.12s}
+    .fi:focus{border-color:rgba(201,169,110,.3)}.fi::placeholder{color:var(--mt);font-size:11px}
+    .sel{padding:7px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;outline:none;font-family:'Prompt',sans-serif}
+    .tw{overflow-x:auto}.tb{width:100%;border-collapse:collapse;font-size:11px}
+    .tb th{padding:6px 8px;text-align:left;font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--mt);border-bottom:1px solid var(--bdr)}
+    .tb td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--tx);white-space:nowrap}
+    .tb tr:hover td{background:rgba(255,255,255,.02)}
+    .num{text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px}
+    .chart-wrap{height:280px;position:relative}
+    .al{padding:9px 12px;border-radius:5px;margin-bottom:10px;font-size:12px;border:1px solid transparent;display:flex;gap:8px}
+    .al-ok{background:rgba(58,159,101,.07);border-color:rgba(58,159,101,.18);color:#6ee7b7}
+    .al-er{background:rgba(184,82,82,.07);border-color:rgba(184,82,82,.18);color:#fca5a5}
+    .loader{text-align:center;padding:20px;color:var(--mt);font-size:12px}
+    .toast-container{position:fixed;top:16px;right:16px;z-index:999}
+    .toast{background:var(--card2);border:1px solid var(--bdr);border-left:4px solid var(--gold);border-radius:6px;padding:10px 14px;margin-bottom:6px;font-size:12px;min-width:240px;animation:slide .2s}
+    .toast.ok{border-left-color:var(--gn)}.toast.er{border-left-color:var(--rd)}
+    @keyframes slide{from{transform:translateX(300px);opacity:0}to{transform:translateX(0);opacity:1}}
+    .result-box{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px;margin-top:12px;display:none}
+    .result-box.show{display:block}
+    .hidden{display:none!important}
+    @media(max-width:600px){.kpi-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="h-logo" onclick="switchTab('dashboard')" title="กลับหน้า Dashboard">
+    <div class="h-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div><div class="h-name" id="headerTitle">Amort</div><div class="h-sub">Prepaid Expense Amortization System</div></div>
+  </div>
+  <div class="sp"></div>
+  <span class="chip" onclick="toggleDark()" title="Dark/Light"><i class="bi bi-moon-stars" id="darkIcon"></i></span>
+  <span class="chip" id="statusChip"><span class="dot" id="statusDot"></span><span id="statusTxt">—</span></span>
+</header>
+
+<div id="main">
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab on" data-tab="dashboard" onclick="switchTab('dashboard')">📈 Dashboard</div>
+    <div class="tab" data-tab="amort" onclick="switchTab('amort')">🚀 Amortization</div>
+    <div class="tab" data-tab="schedule" onclick="switchTab('schedule')">📅 Schedule</div>
+    <div class="tab" data-tab="sap" onclick="switchTab('sap')">📤 SAP</div>
+    <div class="tab" data-tab="checker" onclick="switchTab('checker')">🔍 Checker</div>
+    <div class="tab" data-tab="void" onclick="switchTab('void')">⛔ Void</div>
+    <div class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ Settings</div>
+    <div class="tab" data-tab="guide" onclick="switchTab('guide')">📖 Guide</div>
+  </div>
+
+  <!-- ===== SECTION: DASHBOARD ===== -->
+  <div class="section active" id="secDashboard">
+    <div class="ph"><div class="pt">Dashboard</div><div class="ps" id="dashSub">Loading...</div></div>
+    <div class="kpi-grid" id="dashKpis">
+      <div class="kpi"><div class="kv" id="dTotalItems">—</div><div class="kl">รายการทั้งหมด</div></div>
+      <div class="kpi bl"><div class="kv" id="dTotalAmt">—</div><div class="kl">ยอดตัดจ่ายรวม</div></div>
+      <div class="kpi gn"><div class="kv" id="dCurPeriod">—</div><div class="kl">งวดปัจจุบัน</div></div>
+    </div>
+    <div class="card">
+      <h3><i class="bi bi-graph-up"></i> แนวโน้มค่าตัดจ่ายรายงวด</h3>
+      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3><i class="bi bi-bar-chart"></i> ค่าตัดจ่ายงวดนี้ แยกตาม GL</h3>
+      <div class="chart-wrap"><canvas id="glChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: AMORTIZATION ===== -->
+  <div class="section" id="secAmort">
+    <div class="ph"><div class="pt">Run Amortization</div><div class="ps">คำนวณตัดจ่ายรายเดือน</div></div>
+    <div class="card">
+      <div class="fg"><label>งวด</label><input class="fi" id="amortPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด"></div>
+      <div class="btn-row">
+        <button class="btn btn-gn" onclick="runAmort()"><i class="bi bi-play-fill"></i> Run</button>
+      </div>
+      <div id="loaderAmort" class="loader hidden">⏳ กำลังคำนวณ...</div>
+      <div class="result-box" id="resultAmort"></div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: SCHEDULE ===== -->
+  <div class="section" id="secSchedule">
+    <div class="ph"><div class="pt">Amortization Schedule</div><div class="ps">ตารางตัดจ่ายแบบ Wide Format — 1 รายการ/แถว 🟦</div></div>
+    <div class="card">
+      <div class="fg"><label>งวด</label>
+        <input class="fi" id="schedPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-pri" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>
+        <button class="btn btn-gn" onclick="exportWide()"><i class="bi bi-file-spreadsheet"></i> Export to Sheet</button>
+      </div>
+      <div id="loaderWide" class="loader hidden">⏳ กำลังโหลด...</div>
+      <div class="result-box" id="resultWide"></div>
+      <div class="tw" style="margin-top:10px;max-height:400px;overflow:auto">
+        <table class="tb" id="wideTable">
+          <thead id="wideHead"></thead>
+          <tbody id="wideBody"><tr><td style="color:var(--mt);text-align:center">กด Preview เพื่อดูข้อมูล</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: SAP ===== -->
+  <div class="section" id="secSap">
+    <div class="ph"><div class="pt">SAP Generator</div><div class="ps">สร้าง Journal Entry — Debit(IO/40) / Credit(GL/50) · 900 lines/JE</div></div>
+    <div class="card">
+      <div class="fg"><label>งวด</label><input class="fi" id="sapPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px"></div>
+      <div class="btn-row">
+        <button class="btn btn-pri" onclick="previewSAPJE()"><i class="bi bi-eye"></i> Preview</button>
+        <button class="btn btn-gn" onclick="exportSAPJE()"><i class="bi bi-file-earmark-excel"></i> Generate & Export</button>
+      </div>
+      <div id="loaderSAP" class="loader hidden">⏳ กำลังสร้าง...</div>
+      <div class="result-box" id="resultSAP"></div>
+      <div class="tw" style="margin-top:10px">
+        <table class="tb" id="sapTable">
+          <thead><tr><th>Doc</th><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>IO</th><th>Description</th></tr></thead>
+          <tbody id="sapBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด Preview เพื่อดูตัวอย่าง</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: CHECKER ===== -->
+  <div class="section" id="secChecker">
+    <div class="ph"><div class="pt">Pre-Upload Checker</div><div class="ps">ตรวจสอบข้อมูลก่อน Export SAP — ระบบจะเช็คความถูกต้องของข้อมูลทั้งหมด</div></div>
+    
+    <div class="card">
+      <h3><i class="bi bi-shield-check"></i> Validation Checks (10 รายการ)</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:12px">
+        <div>✅ 1. Doc No ครบ</div>
+        <div>✅ 2. Doc No ซ้ำ</div>
+        <div>✅ 3. IO ครบ</div>
+        <div>✅ 4. GL ครบ</div>
+        <div>✅ 5. วันที่เริ่มต้น</div>
+        <div>✅ 6. วันที่สิ้นสุด</div>
+        <div>✅ 7. วันที่เริ่มต้น ≤ สิ้นสุด</div>
+        <div>✅ 8. วันที่สิ้นสุดผ่านไปแล้ว</div>
+        <div>✅ 9. ยอดเงิน > 0</div>
+        <div>✅ 10. Amortization มียอดคงเหลือ</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-pri" onclick="runChecker()"><i class="bi bi-play-fill"></i> Run Check</button>
+      </div>
+    </div>
+    
+    <div id="loaderChecker" class="loader hidden">⏳ กำลังตรวจสอบข้อมูล 3,979 รายการ...</div>
+    
+    <div id="checkerResult" style="display:none">
+      <div class="card" id="checkerSummary">
+        <h3><i class="bi bi-clipboard-data"></i> Result Summary</h3>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kv" id="cTotalItems">—</div><div class="kl">รายการที่เช็ค</div></div>
+          <div class="kpi gn"><div class="kv" id="cPassed">—</div><div class="kl">ผ่าน</div></div>
+          <div class="kpi rd"><div class="kv" id="cErrors">—</div><div class="kl">Errors</div></div>
+          <div class="kpi bl"><div class="kv" id="cWarnings">—</div><div class="kl">Warnings</div></div>
+        </div>
+        <div id="cStatusBadge" style="margin-top:8px"></div>
+      </div>
+      
+      <div class="card" id="checkerErrorCard" style="display:none">
+        <h3 style="color:var(--rd)"><i class="bi bi-x-circle"></i> Errors</h3>
+        <div class="tw" style="max-height:300px;overflow:auto">
+          <table class="tb">
+            <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+            <tbody id="cErrorBody"></tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="card" id="checkerWarnCard" style="display:none">
+        <h3 style="color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> Warnings</h3>
+        <div class="tw" style="max-height:300px;overflow:auto">
+          <table class="tb">
+            <thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead>
+            <tbody id="cWarnBody"></tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="card">
+        <h3><i class="bi bi-cpu"></i> Amortization Sample Check</h3>
+        <div id="cAmortCheck" style="font-size:12px">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: VOID ===== -->
+  <div class="section" id="secVoid">
+    <div class="ph"><div class="pt">Void / Terminate</div><div class="ps">ยกเลิกสัญญากลางคัน — คำนวณ remaining balance และสร้าง Void Journal Entry</div></div>
+    
+    <div class="card">
+      <h3><i class="bi bi-search"></i> เลือกเอกสาร</h3>
+      <div class="fg"><label>Doc No</label>
+        <select class="sel" id="voidDocNo" onchange="onVoidDocSelect()" style="font-family:'JetBrains Mono',mono;max-width:100%">
+          <option value="">— เลือกเลขที่ DOC —</option>
+        </select>
+      </div>
+      <div id="voidDocInfo" class="hidden" style="margin-top:10px">
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kv" id="vDocNo">—</div><div class="kl">Doc No</div></div>
+          <div class="kpi bl"><div class="kv" id="vAmount">—</div><div class="kl">ยอดรวม</div></div>
+          <div class="kpi gn"><div class="kv" id="vAmortized">—</div><div class="kl">ตัดจ่ายแล้ว</div></div>
+          <div class="kpi rd"><div class="kv" id="vRemaining">—</div><div class="kl">คงเหลือ</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--mt);margin-top:4px">
+          <span id="vDesc"></span> · <span id="vPlate"></span> · 
+          IO: <span id="vIo" style="font-family:JetBrains Mono,mono"></span> · 
+          GL: <span id="vGl" style="font-family:JetBrains Mono,mono"></span>
+        </div>
+      </div>
+      <div id="loaderVoidDoc" class="loader hidden">⏳ กำลังโหลด...</div>
+    </div>
+    
+    <div class="card" id="voidFormCard" style="display:none">
+      <h3><i class="bi bi-pencil"></i> รายละเอียดการยกเลิก</h3>
+      <div class="fg">
+        <label>Void Date</label>
+        <input class="fi" id="voidDate" type="date" style="max-width:200px;font-family:'Prompt',sans-serif">
+      </div>
+      <div class="fg">
+        <label>ประเภท</label>
+        <select class="sel" id="voidType" onchange="onVoidTypeChange()" style="max-width:200px">
+          <option value="refund">คืนเงิน (Refund)</option>
+          <option value="loss">ตัดสูญ (Loss)</option>
+        </select>
+      </div>
+      <div class="fg hidden" id="voidLossGlRow">
+        <label>Loss GL</label>
+        <input class="fi" id="voidLossGL" value="51990010" style="max-width:200px;font-family:JetBrains Mono,mono">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-pri" onclick="voidPreview()"><i class="bi bi-eye"></i> Preview</button>
+        <button class="btn btn-rd" onclick="voidExecute()"><i class="bi bi-x-circle"></i> Execute Void</button>
+      </div>
+    </div>
+    
+    <div id="loaderVoid" class="loader hidden">⏳ กำลังดำเนินการ...</div>
+    <div class="result-box" id="resultVoid"></div>
+    
+    <div class="card" id="voidResultCard" style="display:none">
+      <h3><i class="bi bi-journal-text"></i> Void Journal Entry</h3>
+      <div class="tw">
+        <table class="tb">
+          <thead><tr><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>Description</th></tr></thead>
+          <tbody id="voidJeBody"></tbody>
+        </table>
+      </div>
+      <div class="btn-row" style="margin-top:10px" id="voidResultLinks"></div>
+    </div>
+  </div>
+
+  <!-- ===== SECTION: SETTINGS ===== -->
+  <div class="section" id="secSettings">
+    <div class="ph"><div class="pt">Settings</div><div class="ps">ตั้งค่าระบบ</div></div>
+    <div class="card">
+      <h3><i class="bi bi-gear"></i> ตั้งค่าทั่วไป</h3>
+      <div class="fg"><label>Company</label><input class="fi" id="sCompany" value="1022"></div>
+      <div class="fg"><label>Prepaid GL</label><input class="fi" id="sPrepaidGL" value="11370010"></div>
+      <div class="fg"><label>Doc Type</label><input class="fi" id="sDocType" value="SA"></div>
+      <div class="fg"><label>Currency</label><input class="fi" id="sCurrency" value="THB"></div>
+      <div class="fg"><label>Max Lines/JE</label><input class="fi" id="sMaxLines" value="900"></div>
+      <div class="fg"><label>วิธีปัด Rate</label>
+        <select class="sel" id="sRounding">
+          <option value="4dec">ปัด 4 ตำแหน่ง</option>
+          <option value="full">เต็มความละเอียด</option>
+        </select>
+      </div>
+      <div class="btn-row"><button class="btn btn-pri" onclick="saveSettings()"><i class="bi bi-save"></i> Save</button></div>
+    </div>
+  </div>
+</div>
+
+  <!-- ===== SECTION: GUIDE ===== -->
+  <div class="section" id="secGuide">
+    <div class="ph"><div class="pt">📖 User Guide</div><div class="ps">วิธีการใช้งานระบบ Prepaid Expense Amortization — ข้อมูลจาก Input Sheet, การทำงานแต่ละ Tab</div></div>
+    <div id="guideContent" class="loader">Loading...</div>
+  </div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ========== DARK MODE ==========
+function toggleDark() {
+  document.body.classList.toggle('light');
+  var icon = document.getElementById('darkIcon');
+  icon.className = document.body.classList.contains('light') ? 'bi bi-sun' : 'bi bi-moon-stars';
+  localStorage.setItem('pa_theme', document.body.classList.contains('light') ? 'light' : 'dark');
+}
+(function(){if(localStorage.getItem('pa_theme')==='light'){document.body.classList.add('light');
+  document.getElementById('darkIcon').className='bi bi-sun';}})();
+
+// ========== HELPERS ==========
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function fmt(n){if(n===undefined||n===null)return'—';return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function toast(msg,type){var c=document.getElementById('toastContainer'),t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;c.appendChild(t);setTimeout(function(){t.remove()},3000)}
+function showResult(id, html){var el=document.getElementById(id);el.innerHTML=html;el.classList.add('show')}
+var chartInstances={};
+
+// ========== TABS ==========
+function switchTab(tab){
+  document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
+  document.getElementById('sec'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on')});
+  document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('on');
+  if(tab==='dashboard')loadDashboard();
+  if(tab==='void')loadVoidDocs();
+  if(tab==='guide')loadGuide();
+}
+
+// ========== LOAD DASHBOARD ==========
+function loadDashboard(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){document.getElementById('dashSub').textContent='Error: '+(r.error||'');return}
+    document.getElementById('dTotalItems').textContent=r.totalItems.toLocaleString();
+    document.getElementById('dTotalAmt').textContent=fmt(r.totalAmortization);
+    document.getElementById('dCurPeriod').textContent=r.currentPeriod;
+    document.getElementById('dashSub').textContent=r.totalItems.toLocaleString()+' รายการ · '+r.currentPeriod;
+    document.getElementById('statusTxt').textContent=r.totalItems+' rec';
+    document.getElementById('statusDot').className='dot g';
+    renderCharts(r);
+  }).withFailureHandler(function(e){
+    document.getElementById('dashSub').textContent='Error: '+e.message;
+    document.getElementById('statusTxt').textContent='Error';
+    document.getElementById('statusDot').className='dot r';
+  }).getDashboardData();
+}
+
+function renderCharts(r){
+  if(!r.trend||r.trend.length===0){document.querySelector('#secDashboard .chart-wrap').innerHTML='<div style="text-align:center;padding:60px;color:var(--mt)">No data</div>';return}
+  destroyCharts();
+  var ctx=document.getElementById('trendChart').getContext('2d');
+  var isLight=document.body.classList.contains('light');
+  var gridColor=isLight?'rgba(0,0,0,.06)':'rgba(255,255,255,.06)';
+  var tickColor=isLight?'#88827a':'#676460';
+
+  chartInstances.trend=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:r.trend.map(function(t){return t.period}),
+      datasets:[{
+        label:'Amortization',
+        data:r.trend.map(function(t){return t.amount}),
+        borderColor:'#C9A96E',
+        backgroundColor:'rgba(201,169,110,.08)',
+        fill:true,tension:.3,pointRadius:3,pointHoverRadius:5
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
+        y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+      }
+    }
+  });
+
+  if(r.glBreakdown&&r.glBreakdown.length>0){
+    var glCtx=document.getElementById('glChart').getContext('2d');
+    var glLabels=r.glBreakdown.slice(0,10).map(function(g){return g.gl});
+    var glData=r.glBreakdown.slice(0,10).map(function(g){return g.amount});
+    chartInstances.gl=new Chart(glCtx,{
+      type:'bar',
+      data:{
+        labels:glLabels,
+        datasets:[{
+          label:'Amount',
+          data:glData,
+          backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
+          borderRadius:4
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:tickColor,font:{size:10}}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
+        }
+      }
+    });
+  }
+}
+
+function destroyCharts(){
+  for(var k in chartInstances){if(chartInstances[k]){chartInstances[k].destroy();delete chartInstances[k]}}
+}
+
+// ========== RUN AMORTIZATION ==========
+function runAmort(){
+  var period=document.getElementById('amortPeriod').value.trim();
+  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  document.getElementById('loaderAmort').classList.remove('hidden');
+  document.getElementById('resultAmort').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderAmort').classList.add('hidden');
+    var el=document.getElementById('resultAmort');el.classList.add('show');
+    if(r.ok){
+      var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>'+
+        '<div class="kpi-grid" style="margin-top:10px">'+
+        '<div class="kpi"><div class="kv">'+r.activeItems.toLocaleString()+'</div><div class="kl">Active Items</div></div>'+
+        '<div class="kpi bl"><div class="kv">'+r.scheduleRows.toLocaleString()+'</div><div class="kl">Schedule Rows</div></div>'+
+        '<div class="kpi gn"><div class="kv">฿'+fmt(r.totalAmount)+'</div><div class="kl">Total Amort</div></div></div>';
+      if(r.sample&&r.sample.length>0){
+        html+='<div class="tw" style="max-height:300px;overflow-y:auto"><table class="tb"><thead><tr>'+
+          '<th>Doc</th><th>รายการ</th><th>Period</th><th>GL</th><th class="num">Amount</th><th class="num">Accum</th><th class="num">Remain</th>'+
+          '</tr></thead><tbody>'+r.sample.map(function(s){
+            return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(s.docNo)+'</td>'+
+              '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc((s.description||'').substring(0,30))+'</td>'+
+              '<td>'+esc(s.period)+'</td>'+
+              '<td style="font-family:JetBrains Mono,mono">'+esc(s.glPrepaid||'')+'</td>'+
+              '<td class="num">'+fmt(s.amortAmount)+'</td>'+
+              '<td class="num">'+fmt(s.accumulated)+'</td>'+
+              '<td class="num">'+fmt(s.remaining)+'</td></tr>';
+          }).join('')+'</tbody></table></div>';
+      }
+      el.innerHTML=html;
+      // Also populate schedule table
+      if(r.sample) populateSchedule(r.sample);
+      toast('✅ '+r.message,'ok');
+    }else{
+      el.innerHTML='<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>';
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderAmort').classList.add('hidden');
+    showResult('resultAmort','<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>');
+  }).runMonthEndAmortization(period||null);
+}
+
+function populateSchedule(sample){
+  var tb=document.getElementById('schedBody');
+  if(!sample||!sample.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--mt)">No data</td></tr>';return}
+  tb.innerHTML=sample.map(function(s){
+    return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(s.docNo)+'</td>'+
+      '<td>'+esc((s.description||'').substring(0,25))+'</td>'+
+      '<td>'+esc(s.period)+'</td>'+
+      '<td>'+esc(s.io||'')+'</td>'+
+      '<td style="font-family:JetBrains Mono,mono">'+esc(s.glPrepaid||'')+'</td>'+
+      '<td class="num">'+s.daysInMonth+'</td>'+
+      '<td class="num">'+fmt(s.amortAmount)+'</td>'+
+      '<td class="num">'+fmt(s.accumulated)+'</td>'+
+      '<td class="num">'+fmt(s.remaining)+'</td></tr>';
+  }).join('');
+}
+
+// ========== SAP JE ==========
+function previewSAPJE(){
+  var period=document.getElementById('sapPeriod').value.trim();
+  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  document.getElementById('loaderSAP').classList.remove('hidden');
+  document.getElementById('resultSAP').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderSAP').classList.add('hidden');
+    if(!r.ok){showResult('resultSAP','<div class="al al-er">'+r.error+'</div>');return}
+    var tb=document.getElementById('sapBody');
+    if(!r.sample||r.sample.length===0){tb.innerHTML='<tr><td colspan="8" style="color:var(--mt)">No data</td></tr>';return}
+    var rowsHtml='';
+    for(var d=0;d<r.sample.length;d++){
+      var doc=r.sample[d];
+      for(var l=0;l<doc.lines.length;l++){
+        var line=doc.lines[l];
+        rowsHtml+='<tr>'+
+          '<td style="font-family:JetBrains Mono,mono">DOC#'+doc.doc+'</td>'+
+          '<td>'+line.lineItem+'</td>'+
+          '<td style="font-family:JetBrains Mono,mono">'+line.glAccount+'</td>'+
+          '<td class="num">'+(line.debit?fmt(line.debit):'')+'</td>'+
+          '<td class="num">'+(line.credit?fmt(line.credit):'')+'</td>'+
+          '<td>'+line.key+'</td>'+
+          '<td>'+esc(line.io)+'</td>'+
+          '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">'+esc(line.description)+'</td></tr>';
+      }
+      if(d<r.sample.length-1) rowsHtml+='<tr><td colspan="8" style="border-bottom:2px solid var(--gold);padding:2px"></td></tr>';
+    }
+    tb.innerHTML=rowsHtml;
+    showResult('resultSAP','<div class="al al-ok"><i class="bi bi-check-circle"></i> แสดง '+r.sample.length+' เอกสาร (รวม ~'+r.totalDocs+' docs, '+r.totalLines+' lines)</div>');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderSAP').classList.add('hidden');
+    showResult('resultSAP','<div class="al al-er">'+e.message+'</div>');
+  }).getSAPJEPreview(period||null);
+}
+
+function exportSAPJE(){
+  var period=document.getElementById('sapPeriod').value.trim();
+  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  if(!confirm('สร้าง SAP JE สำหรับ'+(period?' งวด '+period:' ทุกรายการ')+'?'))return;
+  document.getElementById('loaderSAP').classList.remove('hidden');
+  document.getElementById('resultSAP').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderSAP').classList.add('hidden');
+    if(r.ok){
+      var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>'+
+        '<div class="kpi-grid" style="margin-top:10px">'+
+        '<div class="kpi"><div class="kv">'+r.totalDocs+'</div><div class="kl">Documents</div></div>'+
+        '<div class="kpi bl"><div class="kv">'+r.totalLines.toLocaleString()+'</div><div class="kl">Total Lines</div></div>'+
+        '<div class="kpi gn"><div class="kv">฿'+fmt(r.totalDebit)+'</div><div class="kl">Dr = Cr</div></div></div>'+
+        '<div class="btn-row" style="margin-top:10px">'+
+        (r.sheetUrl?'<a href="'+r.sheetUrl+'" target="_blank" class="btn btn-ghost"><i class="bi bi-file-spreadsheet"></i> Open Sheet</a>':'')+
+        (r.xlsxUrl?'<a href="'+r.xlsxUrl+'" target="_blank" class="btn btn-pri"><i class="bi bi-download"></i> Download .xlsx</a>':'')+
+        '</div>';
+      showResult('resultSAP',html);
+      toast('✅ SAP JE ready','ok');
+    }else{
+      showResult('resultSAP','<div class="al al-er">'+(r.error||'Error')+'</div>');
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderSAP').classList.add('hidden');
+    showResult('resultSAP','<div class="al al-er">'+e.message+'</div>');
+  }).exportSAPJE(period||null);
+}
+
+// ========== WIDE FORMAT ==========
+function loadWidePreview(){
+  var period=document.getElementById('schedPeriod').value.trim();
+  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  document.getElementById('loaderWide').classList.remove('hidden');
+  document.getElementById('resultWide').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(!r.ok){showResult('resultWide','<div class="al al-er">'+r.error+'</div>');return}
+    var thead=document.getElementById('wideHead');
+    var tbody=document.getElementById('wideBody');
+    // Render header with blue style for month columns
+    var headHtml='<tr>';
+    for(var i=0;i<r.headers.length;i++){
+      var isMonth=i>=r.baseCount;
+      headHtml+='<th style="'+(isMonth?'background:#cfe2f3;color:#1a5276':'')+'">'+esc(r.headers[i])+'</th>';
+    }
+    headHtml+='</tr>';
+    thead.innerHTML=headHtml;
+    // Render rows
+    if(!r.rows||r.rows.length===0){
+      tbody.innerHTML='<tr><td colspan="'+r.headers.length+'" style="text-align:center;color:var(--mt)">No data</td></tr>';
+      return;
+    }
+    tbody.innerHTML=r.rows.map(function(row){
+      return '<tr>'+row.map(function(cell,ci){
+        var cls=ci>=r.baseCount?'num':'';
+        var style=ci>=r.baseCount?'color:#1a5276;font-weight:500':'';
+        return '<td class="'+cls+'" style="'+style+'">'+(typeof cell==='number'?fmt(cell):esc(String(cell)))+'</td>';
+      }).join('')+'</tr>';
+    }).join('');
+    showResult('resultWide','<div class="al al-ok"><i class="bi bi-check-circle"></i> แสดง '+r.totalRows+' รายการ ('+r.totalMonths+' เดือน)</div>');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    showResult('resultWide','<div class="al al-er">'+e.message+'</div>');
+  }).getWidePreview(period||null);
+}
+
+function exportWide(){
+  var period=document.getElementById('schedPeriod').value.trim();
+  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  if(!confirm('Export ไปยัง Sheet "'+period+'"? (อาจใช้เวลา)'+(period?'':' ทั้งหมด')))return;
+  document.getElementById('loaderWide').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(r.ok){
+      showResult('resultWide','<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>');
+      toast('✅ '+r.message,'ok');
+    }else{
+      showResult('resultWide','<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>');
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    showResult('resultWide','<div class="al al-er">'+e.message+'</div>');
+  }).exportWideToSheet(period||null);
+}
+
+// ========== USER GUIDE ==========
+function loadGuide(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){document.getElementById('guideContent').innerHTML='<div class="al al-er">'+(r.error||'Error')+'</div>';return}
+    var html='';
+    // System info
+    html+='<div class="card"><h3><i class="bi bi-info-circle"></i> เกี่ยวกับระบบ</h3>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">'+
+      '<div><strong>ชื่อระบบ:</strong> '+esc(r.system.name)+'</div>'+
+      '<div><strong>เวอร์ชัน:</strong> '+esc(r.system.version)+'</div>'+
+      '<div><strong>Runtime:</strong> '+esc(r.system.runtime)+'</div>'+
+      '</div></div>';
+    // Data Sources
+    html+='<div class="card"><h3><i class="bi bi-database"></i> แหล่งข้อมูล (Data Sources)</h3>';
+    for(var d=0;d<r.dataSources.length;d++){
+      var ds=r.dataSources[d];
+      html+='<div style="margin-bottom:12px"><strong>'+esc(ds.name)+'</strong> — ID: <code style="font-family:JetBrains Mono,mono;background:var(--bg);padding:1px 5px;border-radius:3px">'+esc(ds.id)+'</code>';
+      if(ds.sheet) html+=' · Sheet: <code style="font-family:JetBrains Mono,mono">'+esc(ds.sheet)+'</code>';
+      if(ds.totalRecords) html+=' · '+ds.totalRecords.toLocaleString()+' records';
+      if(ds.desc) html+='<br><span style="color:var(--mt)">'+esc(ds.desc)+'</span>';
+      html+='</div>';
+      if(ds.columns){
+        html+='<table class="tb"><thead><tr><th>Col</th><th>Field</th><th>Description</th></tr></thead><tbody>';
+        for(var c=0;c<ds.columns.length;c++){
+          html+='<tr><td style="font-family:JetBrains Mono,mono">'+esc(ds.columns[c].col)+'</td>'+
+            '<td>'+esc(ds.columns[c].name)+'</td><td>'+esc(ds.columns[c].desc)+'</td></tr>';
+        }
+        html+='</tbody></table>';
+      }
+    }
+    html+='</div>';
+    // Tabs
+    html+='<div class="card"><h3><i class="bi bi-grid"></i> เมนูการใช้งาน (Tabs)</h3>';
+    for(var t=0;t<r.tabs.length;t++){
+      var tab=r.tabs[t];
+      html+='<div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--bdr)">'+
+        '<div style="font-size:14px;font-weight:500;margin-bottom:4px">'+esc(tab.icon||'')+' '+esc(tab.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-bottom:6px">'+esc(tab.desc)+'</div>'+
+        '<div style="font-size:11px"><strong>วิธีใช้:</strong> '+esc(tab.howto)+'</div>';
+      if(tab.formula) html+='<div style="font-size:11px;color:var(--gold);margin-top:2px"><strong>สูตร:</strong> '+esc(tab.formula)+'</div>';
+      if(tab.dataSource) html+='<div style="font-size:11px;color:var(--bl);margin-top:2px"><strong>ข้อมูลจาก:</strong> '+esc(tab.dataSource)+'</div>';
+      if(tab.note) html+='<div style="font-size:11px;color:var(--mt);margin-top:2px"><strong>หมายเหตุ:</strong> '+esc(tab.note)+'</div>';
+      if(tab.checks){
+        html+='<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">';
+        for(var ch=0;ch<tab.checks.length;ch++) html+='<span style="font-size:10px;padding:2px 8px;background:rgba(58,159,101,.08);border:1px solid rgba(58,159,101,.18);border-radius:12px">✅ '+esc(tab.checks[ch])+'</span>';
+        html+='</div>';
+      }
+      if(tab.types){
+        html+='<div style="margin-top:4px;font-size:11px"><strong>ประเภท:</strong></div><ul style="margin:2px 0 0 16px;font-size:11px">';
+        for(var ty=0;ty<tab.types.length;ty++) html+='<li>'+esc(tab.types[ty])+'</li>';
+        html+='</ul>';
+      }
+      if(tab.output) html+='<div style="font-size:11px;color:var(--gn);margin-top:2px"><strong>Output:</strong> '+esc(tab.output)+'</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+    // Tech notes
+    html+='<div class="card"><h3><i class="bi bi-gear"></i> Technical Notes</h3><ul style="margin:0;padding-left:16px;font-size:11px;line-height:1.8">';
+    for(var n=0;n<r.techNotes.length;n++) html+='<li>'+esc(r.techNotes[n])+'</li>';
+    html+='</ul></div>';
+    
+    document.getElementById('guideContent').innerHTML=html;
+  }).withFailureHandler(function(e){
+    document.getElementById('guideContent').innerHTML='<div class="al al-er">'+e.message+'</div>';
+  }).getUserGuideData();
+}
+
+// ========== SETTINGS ==========
+function loadSettings(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok||!r.settings)return;
+    var s=r.settings;
+    document.getElementById('sCompany').value=s.company||'1022';
+    document.getElementById('sPrepaidGL').value=s.prepaidGL||'11370010';
+    document.getElementById('sDocType').value=s.docType||'SA';
+    document.getElementById('sCurrency').value=s.currency||'THB';
+    document.getElementById('sMaxLines').value=s.maxLinesPerJE||900;
+    document.getElementById('sRounding').value=s.rounding||'4dec';
+  }).getSettings();
+}
+function saveSettings(){
+  var settings={
+    company:document.getElementById('sCompany').value.trim(),
+    prepaidGL:document.getElementById('sPrepaidGL').value.trim(),
+    docType:document.getElementById('sDocType').value.trim(),
+    currency:document.getElementById('sCurrency').value.trim(),
+    maxLinesPerJE:Number(document.getElementById('sMaxLines').value)||900,
+    rounding:document.getElementById('sRounding').value
+  };
+  google.script.run.withSuccessHandler(function(r){
+    if(r.ok){toast('✅ Settings saved','ok')}else{toast('❌ '+r.error,'er')}
+  }).saveSettings(settings);
+}
+
+// ========== PRE-UPLOAD CHECKER ==========
+function runChecker(){
+  document.getElementById('loaderChecker').classList.remove('hidden');
+  document.getElementById('checkerResult').style.display='none';
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderChecker').classList.add('hidden');
+    if(!r.ok){toast('❌ '+r.error,'er');return}
+    document.getElementById('checkerResult').style.display='block';
+    // Summary
+    document.getElementById('cTotalItems').textContent=r.totalItems.toLocaleString();
+    document.getElementById('cPassed').textContent=(r.totalItems - r.errorCount).toLocaleString();
+    document.getElementById('cErrors').textContent=r.errorCount.toLocaleString();
+    document.getElementById('cWarnings').textContent=r.warningCount.toLocaleString();
+    // Status badge
+    var badge='';
+    if(r.status==='PASS')badge='<span class="al al-ok"><i class="bi bi-check-circle"></i> ✅ PASS — ข้อมูลพร้อม Export</span>';
+    else if(r.status==='WARN')badge='<span class="al" style="background:rgba(201,169,110,.07);border-color:rgba(201,169,110,.18);color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> ⚠️ PASS WITH WARNINGS — ควรตรวจสอบก่อน Export</span>';
+    else badge='<span class="al al-er"><i class="bi bi-x-circle"></i> ❌ FAIL — แก้ไข Errors ก่อน Export</span>';
+    document.getElementById('cStatusBadge').innerHTML=badge;
+    // Errors table
+    if(r.errors&&r.errors.length>0){
+      document.getElementById('checkerErrorCard').style.display='block';
+      document.getElementById('cErrorBody').innerHTML=r.errors.map(function(e){
+        return '<tr><td style="font-family:JetBrains Mono,mono">'+e.row+'</td><td>'+esc(e.field||'')+'</td><td style="max-width:400px;overflow:hidden;text-overflow:ellipsis">'+esc(e.message||'')+'</td></tr>';
+      }).join('');
+    } else {
+      document.getElementById('checkerErrorCard').style.display='none';
+    }
+    // Warnings table
+    if(r.warnings&&r.warnings.length>0){
+      document.getElementById('checkerWarnCard').style.display='block';
+      document.getElementById('cWarnBody').innerHTML=r.warnings.map(function(w){
+        return '<tr><td style="font-family:JetBrains Mono,mono">'+w.row+'</td><td>'+esc(w.field||'')+'</td><td style="max-width:400px;overflow:hidden;text-overflow:ellipsis">'+esc(w.message||'')+'</td></tr>';
+      }).join('');
+    } else {
+      document.getElementById('checkerWarnCard').style.display='none';
+    }
+    // Amort check
+    var ac=r.amortCheck||{};
+    document.getElementById('cAmortCheck').innerHTML='สุ่มตรวจ <strong>'+ac.checked+'</strong> รายการ · พบ <strong>'+ac.mismatched+'</strong> รายการที่มียอดคงเหลือไม่ตรง';
+    toast('✅ Check completed: '+r.errorCount+' errors, '+r.warningCount+' warnings','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderChecker').classList.add('hidden');
+    toast('❌ '+e.message,'er');
+  }).runPreUploadCheck(null);
+}
+
+// ========== VOID / TERMINATE ==========
+function loadVoidDocs(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok||!r.list){return}
+    var sel=document.getElementById('voidDocNo');
+    sel.innerHTML='<option value="">— เลือกเลขที่ DOC —</option>'+r.list.map(function(d){
+      return '<option value="'+esc(d.docNo)+'">'+esc(d.docNo)+' — '+esc((d.description||'').substring(0,40))+'</option>';
+    }).join('');
+  }).getDocList();
+}
+function onVoidDocSelect(){
+  var docNo=document.getElementById('voidDocNo').value;
+  if(!docNo){document.getElementById('voidDocInfo').classList.add('hidden');document.getElementById('voidFormCard').style.display='none';return}
+  document.getElementById('loaderVoidDoc').classList.remove('hidden');
+  document.getElementById('voidDocInfo').classList.add('hidden');
+  document.getElementById('voidFormCard').style.display='none';
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderVoidDoc').classList.add('hidden');
+    document.getElementById('voidResultCard').style.display='none';
+    document.getElementById('resultVoid').classList.remove('show');
+    if(!r.ok){toast('❌ '+r.error,'er');return}
+    document.getElementById('vDocNo').textContent=r.docNo;
+    document.getElementById('vAmount').textContent=fmt(r.amount);
+    document.getElementById('vAmortized').textContent=fmt(r.amortized);
+    document.getElementById('vRemaining').textContent=fmt(r.remaining);
+    document.getElementById('vDesc').textContent=r.description||'—';
+    document.getElementById('vPlate').textContent=r.plate||'—';
+    document.getElementById('vIo').textContent=r.io||'—';
+    document.getElementById('vGl').textContent=r.glPrepaid||'—';
+    document.getElementById('voidDocInfo').classList.remove('hidden');
+    document.getElementById('voidFormCard').style.display='block';
+    // Set default void date to today
+    var today=new Date().toISOString().slice(0,10);
+    document.getElementById('voidDate').value=today;
+  }).getDocDetail(docNo);
+}
+function onVoidTypeChange(){
+  var type=document.getElementById('voidType').value;
+  document.getElementById('voidLossGlRow').classList.toggle('hidden',type!=='loss');
+}
+function voidPreview(){
+  var docNo=document.getElementById('voidDocNo').value;
+  if(!docNo){toast('กรุณาเลือกเอกสาร','er');return}
+  var type=document.getElementById('voidType').value;
+  var voidDate=document.getElementById('voidDate').value;
+  var lossGL=document.getElementById('voidLossGL').value.trim()||'51990010';
+  document.getElementById('loaderVoid').classList.remove('hidden');
+  document.getElementById('resultVoid').classList.remove('show');
+  document.getElementById('voidResultCard').style.display='none';
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderVoid').classList.add('hidden');
+    if(!r.ok){showResult('resultVoid','<div class="al al-er"><i class="bi bi-x-circle"></i> '+r.error+'</div>');return}
+    // Show preview
+    var remaining=r.amount||0;
+    var typeLabel=type==='refund'?'💰 Refund (คืนเงิน)':'📉 Loss (ตัดสูญ)';
+    var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> <strong>'+typeLabel+'</strong> — '+
+      esc(docNo)+' · จำนวนคงเหลือ: <strong>฿'+fmt(remaining)+'</strong></div>';
+    showResult('resultVoid',html);
+    // Show JE preview
+    var tb=document.getElementById('voidJeBody');
+    tb.innerHTML='<tr><td>1</td><td style="font-family:JetBrains Mono,mono">'+(type==='refund'?r.glPrepaid||'—':lossGL)+'</td>'+
+      '<td class="num">฿'+fmt(remaining)+'</td><td class="num"></td><td>'+(type==='refund'?'40':'50')+'</td>'+
+      '<td>VOID-'+(type==='refund'?'REFUND':'LOSS')+'</td></tr>'+
+      '<tr><td>2</td><td style="font-family:JetBrains Mono,mono">'+(r.io||'—')+'</td>'+
+      '<td class="num"></td><td class="num">฿'+fmt(remaining)+'</td><td>'+(type==='refund'?'50':'40')+'</td>'+
+      '<td>VOID-'+(type==='refund'?'REFUND':'LOSS')+'</td></tr>';
+    document.getElementById('voidResultCard').style.display='block';
+    document.getElementById('voidResultLinks').innerHTML='';
+    toast('✅ Preview พร้อม Execute','ok');
+  }).getDocDetail(docNo);
+}
+function voidExecute(){
+  var docNo=document.getElementById('voidDocNo').value;
+  if(!docNo){toast('กรุณาเลือกเอกสาร','er');return}
+  var type=document.getElementById('voidType').value;
+  var voidDate=document.getElementById('voidDate').value;
+  var lossGL=document.getElementById('voidLossGL').value.trim()||'51990010';
+  if(!confirm('ยืนยัน Void เอกสาร '+docNo+' แบบ '+(type==='refund'?'REFUND':'LOSS')+'?'))return;
+  document.getElementById('loaderVoid').classList.remove('hidden');
+  document.getElementById('resultVoid').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderVoid').classList.add('hidden');
+    if(!r.ok){showResult('resultVoid','<div class="al al-er"><i class="bi bi-x-circle"></i> '+r.error+'</div>');return}
+    var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>'+
+      '<div class="kpi-grid" style="margin-top:10px">'+
+      '<div class="kpi"><div class="kv">฿'+fmt(r.amount)+'</div><div class="kl">Void Amount</div></div>'+
+      '<div class="kpi bl"><div class="kv">'+r.lines+'</div><div class="kl">JE Lines</div></div>'+
+      '<div class="kpi gn"><div class="kv" style="font-size:14px">'+esc(r.jeRef)+'</div><div class="kl">JE Reference</div></div></div>'+
+      '<div class="btn-row" style="margin-top:10px">'+
+      (r.sheetUrl?'<a href="'+r.sheetUrl+'" target="_blank" class="btn btn-ghost"><i class="bi bi-file-spreadsheet"></i> Open Sheet</a>':'')+
+      (r.xlsxUrl?'<a href="'+r.xlsxUrl+'" target="_blank" class="btn btn-pri"><i class="bi bi-download"></i> Download .xlsx</a>':'')+
+      '</div>';
+    showResult('resultVoid',html);
+    toast('✅ Void completed','ok');
+    // Disable form
+    document.getElementById('voidFormCard').style.display='none';
+  }).voidPrepaid({docNo:docNo, voidDate:voidDate, type:type, lossGL:lossGL});
+}
+(function init(){
+  google.charts={}; // dummy to prevent error if google.charts is referenced
+  loadDashboard();
+  loadSettings();
+})();
+</script>
+</body>
+</html>
