@@ -1383,6 +1383,28 @@ function getUserGuideData() {
           name: 'Settings',
           desc: 'ตั้งค่าระบบ: Company, Prepaid GL, Doc Type, Currency, Max Lines/JE, วิธีปัดเศษ',
           howto: 'แก้ไขค่า → กด Save — ค่าจะถูกบันทึกใน Script Properties'
+        },
+        {
+          id: 'sync',
+          icon: '🔄',
+          name: 'Sync Data',
+          desc: 'Data source synchronization — view Sheet ID, records count, last sync timestamp, and trigger manual sync',
+          howto: 'เปิดหน้า Sync Data → ดูสถานะ Data Source → กด Sync Now เพื่อรีเฟรชข้อมูล',
+          dataSource: 'อ่านจาก Input Sheet และ CacheService'
+        },
+        {
+          id: 'admin',
+          icon: '🛠️',
+          name: 'Admin Console',
+          desc: 'System administration — view version/runtime/deploy info, manage cache, quick actions',
+          howto: 'เปิดหน้า Admin Console → ดู System Info → กด Clear Cache เพื่อล้าง CacheService → Quick Actions สำหรับงาน admin อื่นๆ'
+        },
+        {
+          id: 'audit',
+          icon: '📋',
+          name: 'Audit Log',
+          desc: 'System activity log — tracks actions like sync, cache clear, and system events',
+          howto: 'เปิดหน้า Audit Log → ดูตาราง Timestamp/Action/Detail — รายการจะถูกบันทึกใน memory (ชั่วคราว)'
         }
       ],
       techNotes: [
@@ -1421,6 +1443,91 @@ function saveConfig(params) {
     if (params.sapTemplateId) props.setProperty('SAP_TEMPLATE_ID', params.sapTemplateId);
     return { ok: true, message: 'Config saved' };
   } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ================= BACKEND STUBS: SYNC, ADMIN, AUDIT =================
+function getSyncStatus() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var lastSync = props.getProperty('LAST_SYNC') || 'Never';
+    var items = [];
+    try { items = readInputData_(); } catch(e) {}
+    return {
+      ok: true,
+      sheetId: getInputSheetId_().substring(0, 8) + '...',
+      records: items.length,
+      lastSync: lastSync,
+      status: 'Online'
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function syncData() {
+  try {
+    var items = readInputData_();
+    var now = new Date().toISOString();
+    PropertiesService.getScriptProperties().setProperty('LAST_SYNC', now);
+    return {
+      ok: true,
+      records: items.length,
+      lastSync: now,
+      message: 'Synced ' + items.length + ' records'
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function getSystemInfo() {
+  try {
+    return {
+      ok: true,
+      version: 'v9 (Phase 1-7)',
+      runtime: 'Google Apps Script (V8)',
+      deploy: ScriptApp.getScriptId().substring(0, 8) + '...'
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function clearCache() {
+  try {
+    CacheService.getScriptCache().remove('dashboard_data');
+    CacheService.getScriptCache().remove('input_summary');
+    CacheService.getScriptCache().remove('amort_data');
+    return { ok: true, message: 'Cache cleared' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+var auditLog_ = [
+  { timestamp: new Date().toISOString(), action: 'System initialized', detail: 'Amort system started' },
+  { timestamp: new Date().toISOString(), action: 'User guide loaded', detail: 'Guide data accessed' }
+];
+
+function getAuditLog() {
+  try {
+    return { ok: true, log: auditLog_ };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function logAction(action, detail) {
+  try {
+    auditLog_.push({
+      timestamp: new Date().toISOString(),
+      action: String(action || ''),
+      detail: String(detail || '')
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 // ================= FIX SUMMARY =================
