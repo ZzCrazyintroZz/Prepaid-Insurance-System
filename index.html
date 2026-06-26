@@ -93,6 +93,7 @@
     <div class="tab" data-tab="checker" onclick="switchTab('checker')">🔍 Checker</div>
     <div class="tab" data-tab="void" onclick="switchTab('void')">⛔ Void</div>
     <div class="tab" data-tab="settings" onclick="switchTab('settings')">⚙️ Settings</div>
+    <div class="tab" data-tab="guide" onclick="switchTab('guide')">📖 Guide</div>
   </div>
 
   <!-- ===== SECTION: DASHBOARD ===== -->
@@ -317,6 +318,13 @@
     </div>
   </div>
 </div>
+
+  <!-- ===== SECTION: GUIDE ===== -->
+  <div class="section" id="secGuide">
+    <div class="ph"><div class="pt">📖 User Guide</div><div class="ps">วิธีการใช้งานระบบ Prepaid Expense Amortization — ข้อมูลจาก Input Sheet, การทำงานแต่ละ Tab</div></div>
+    <div id="guideContent" class="loader">Loading...</div>
+  </div>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -345,6 +353,7 @@ function switchTab(tab){
   document.querySelector('.tab[data-tab="'+tab+'"]').classList.add('on');
   if(tab==='dashboard')loadDashboard();
   if(tab==='void')loadVoidDocs();
+  if(tab==='guide')loadGuide();
 }
 
 // ========== LOAD DASHBOARD ==========
@@ -603,6 +612,73 @@ function exportWide(){
     document.getElementById('loaderWide').classList.add('hidden');
     showResult('resultWide','<div class="al al-er">'+e.message+'</div>');
   }).exportWideToSheet(period||null);
+}
+
+// ========== USER GUIDE ==========
+function loadGuide(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){document.getElementById('guideContent').innerHTML='<div class="al al-er">'+(r.error||'Error')+'</div>';return}
+    var html='';
+    // System info
+    html+='<div class="card"><h3><i class="bi bi-info-circle"></i> เกี่ยวกับระบบ</h3>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">'+
+      '<div><strong>ชื่อระบบ:</strong> '+esc(r.system.name)+'</div>'+
+      '<div><strong>เวอร์ชัน:</strong> '+esc(r.system.version)+'</div>'+
+      '<div><strong>Runtime:</strong> '+esc(r.system.runtime)+'</div>'+
+      '</div></div>';
+    // Data Sources
+    html+='<div class="card"><h3><i class="bi bi-database"></i> แหล่งข้อมูล (Data Sources)</h3>';
+    for(var d=0;d<r.dataSources.length;d++){
+      var ds=r.dataSources[d];
+      html+='<div style="margin-bottom:12px"><strong>'+esc(ds.name)+'</strong> — ID: <code style="font-family:JetBrains Mono,mono;background:var(--bg);padding:1px 5px;border-radius:3px">'+esc(ds.id)+'</code>';
+      if(ds.sheet) html+=' · Sheet: <code style="font-family:JetBrains Mono,mono">'+esc(ds.sheet)+'</code>';
+      if(ds.totalRecords) html+=' · '+ds.totalRecords.toLocaleString()+' records';
+      if(ds.desc) html+='<br><span style="color:var(--mt)">'+esc(ds.desc)+'</span>';
+      html+='</div>';
+      if(ds.columns){
+        html+='<table class="tb"><thead><tr><th>Col</th><th>Field</th><th>Description</th></tr></thead><tbody>';
+        for(var c=0;c<ds.columns.length;c++){
+          html+='<tr><td style="font-family:JetBrains Mono,mono">'+esc(ds.columns[c].col)+'</td>'+
+            '<td>'+esc(ds.columns[c].name)+'</td><td>'+esc(ds.columns[c].desc)+'</td></tr>';
+        }
+        html+='</tbody></table>';
+      }
+    }
+    html+='</div>';
+    // Tabs
+    html+='<div class="card"><h3><i class="bi bi-grid"></i> เมนูการใช้งาน (Tabs)</h3>';
+    for(var t=0;t<r.tabs.length;t++){
+      var tab=r.tabs[t];
+      html+='<div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--bdr)">'+
+        '<div style="font-size:14px;font-weight:500;margin-bottom:4px">'+esc(tab.icon||'')+' '+esc(tab.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--mt);margin-bottom:6px">'+esc(tab.desc)+'</div>'+
+        '<div style="font-size:11px"><strong>วิธีใช้:</strong> '+esc(tab.howto)+'</div>';
+      if(tab.formula) html+='<div style="font-size:11px;color:var(--gold);margin-top:2px"><strong>สูตร:</strong> '+esc(tab.formula)+'</div>';
+      if(tab.dataSource) html+='<div style="font-size:11px;color:var(--bl);margin-top:2px"><strong>ข้อมูลจาก:</strong> '+esc(tab.dataSource)+'</div>';
+      if(tab.note) html+='<div style="font-size:11px;color:var(--mt);margin-top:2px"><strong>หมายเหตุ:</strong> '+esc(tab.note)+'</div>';
+      if(tab.checks){
+        html+='<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">';
+        for(var ch=0;ch<tab.checks.length;ch++) html+='<span style="font-size:10px;padding:2px 8px;background:rgba(58,159,101,.08);border:1px solid rgba(58,159,101,.18);border-radius:12px">✅ '+esc(tab.checks[ch])+'</span>';
+        html+='</div>';
+      }
+      if(tab.types){
+        html+='<div style="margin-top:4px;font-size:11px"><strong>ประเภท:</strong></div><ul style="margin:2px 0 0 16px;font-size:11px">';
+        for(var ty=0;ty<tab.types.length;ty++) html+='<li>'+esc(tab.types[ty])+'</li>';
+        html+='</ul>';
+      }
+      if(tab.output) html+='<div style="font-size:11px;color:var(--gn);margin-top:2px"><strong>Output:</strong> '+esc(tab.output)+'</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+    // Tech notes
+    html+='<div class="card"><h3><i class="bi bi-gear"></i> Technical Notes</h3><ul style="margin:0;padding-left:16px;font-size:11px;line-height:1.8">';
+    for(var n=0;n<r.techNotes.length;n++) html+='<li>'+esc(r.techNotes[n])+'</li>';
+    html+='</ul></div>';
+    
+    document.getElementById('guideContent').innerHTML=html;
+  }).withFailureHandler(function(e){
+    document.getElementById('guideContent').innerHTML='<div class="al al-er">'+e.message+'</div>';
+  }).getUserGuideData();
 }
 
 // ========== SETTINGS ==========
