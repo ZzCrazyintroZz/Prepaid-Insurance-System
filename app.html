@@ -92,7 +92,7 @@ function go(p){
   if(navEl) navEl.classList.add('on');
   // Update bottom nav
   document.querySelectorAll('.bn-item').forEach(function(b){b.classList.remove('on')});
-  var bnMap = {dashboard:0, amort:1, sap:2, sync:3, admin:4, settings:5};
+  var bnMap = {dashboard:0, amort:1, sap:2, sync:3, import:4, admin:5, budget:6, settings:7};
   var bnIdx = bnMap[p];
   if(bnIdx !== undefined){
     var items = document.querySelectorAll('.bn-item');
@@ -115,8 +115,11 @@ function go(p){
   if(p==='crud') loadCrudData();
   if(p==='periodclose') loadPeriodClose();
   if(p==='approvals') loadApprovals();
+  if(p==='budget') loadBudgetData();
+  if(p==='import') loadImportPage();
+  if(p==='voidexpense') loadVoidExpense();
+  if(p==='glrecon') loadGLRecon();
 }
-// Backward compatibility: switchTab calls go()
 function switchTab(p){go(p);}
 
 // ========== MOBILE NAV TOGGLE ==========
@@ -1482,6 +1485,302 @@ function syncNow(){
     document.getElementById('loaderSync').classList.add('hidden');
     toast('❌ '+e.message,'er');
   }).syncData();
+}
+
+// ========== IMPORT FUNCTIONS ==========
+function importPreview() {
+  var csvText = document.getElementById('importCsvText').value.trim();
+  if (!csvText) { toast('❌ กรุณาใส่ข้อมูล CSV ก่อน', 'er'); return; }
+  
+  document.getElementById('importPreviewBtn').disabled = true;
+  document.getElementById('loaderImport').classList.remove('hidden');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('importPreviewBtn').disabled = false;
+    document.getElementById('loaderImport').classList.add('hidden');
+    
+    if (!r.ok) {
+      toast('❌ Preview failed: ' + (r.error || ''), 'er');
+      return;
+    }
+    
+    renderImportPreview(r, csvText);
+  }).withFailureHandler(function(e) {
+    document.getElementById('importPreviewBtn').disabled = false;
+    document.getElementById('loaderImport').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getImportPreview(csvText);
+}
+
+function renderImportPreview(data, csvText) {
+  var html = '';
+  
+  // Summary
+  html += '<div class="kpi-grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">';
+  html += '<div class="kpi gn"><div class="kv" style="font-size:14px">' + data.totalRows + '</div><div class="kl">Total Rows</div></div>';
+  html += '<div class="kpi"><div class="kv" style="font-size:14px">' + data.headers.length + '</div><div class="kl">Columns</div></div>';
+  html += '<div class="kpi bl"><div class="kv" style="font-size:12px">' + (data.delimiter || ',') + '</div><div class="kl">Delimiter</div></div>';
+  html += '</div>';
+  
+  // Warnings
+  if (data.warnings && data.warnings.length > 0) {
+    html += '<div class="al al-er" style="margin-bottom:10px">';
+    html += '<i class="bi bi-exclamation-triangle"></i><div>';
+    for (var w = 0; w < data.warnings.length; w++) {
+      html += '<div>' + esc(data.warnings[w]) + '</div>';
+    }
+    html += '</div></div>';
+  }
+  
+  // Column Mapping
+  html += '<h3 style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:8px;display:flex;align-items:center;gap:8px">';
+  html += '<i class="bi bi-diagram-3"></i> Column Mapping';
+  html += '</h3>';
+  
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px;font-size:11px">';
+  html += '<div style="color:var(--mt);font-weight:500">CSV Header</div>';
+  html += '<div style="color:var(--mt);font-weight:500">→ System Field</div>';
+  html += '<div style="color:var(--mt);font-weight:500">Actions</div>';
+  
+  // Build map of system fields to columns for dropdown
+  var mappedFieldIds = {};
+  for (var f in data.mappedColumns) {
+    mappedFieldIds[f] = true;
+  }
+  
+  var systemFields = data.systemFields || [];
+  
+  for (var i = 0; i < data.headers.length; i++) {
+    var hdr = data.headers[i];
+    var fieldId = null;
+    for (var f2 in data.mappedColumns) {
+      if (data.mappedColumns[f2].col === i) {
+        fieldId = f2;
+        break;
+      }
+    }
+    
+    html += '<div style="font-family:JetBrains Mono,mono;color:var(--tx)">' + esc(hdr) + '</div>';
+    
+    // Dropdown for field selection
+    html += '<div><select class="sel" id="mapCol_' + i + '" style="width:100%;font-size:10px;padding:4px 6px" onchange="onMappingChange()">';
+    html += '<option value="">— skip —</option>';
+    for (var s = 0; s < systemFields.length; s++) {
+      var sf = systemFields[s];
+      var selected = (fieldId === sf) ? ' selected' : '';
+      html += '<option value="' + sf + '"' + selected + '>' + sf + '</option>';
+    }
+    html += '</select></div>';
+    
+    // Field indicator
+    html += '<div style="font-size:10px;color:' + (fieldId ? 'var(--gn)' : 'var(--mt)') + '">';
+    html += fieldId ? '✅ ' + fieldId : '—';
+    html += '</div>';
+  }
+  html += '</div>';
+  
+  // Preview Table
+  html += '<h3 style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:8px;display:flex;align-items:center;gap:8px">';
+  html += '<i class="bi bi-table"></i> Preview (first ' + data.previewRows.length + ' of ' + data.totalRows + ' rows)';
+  html += '</h3>';
+  
+  html += '<div class="tw" style="max-height:300px;overflow:auto;margin-bottom:12px">';
+  html += '<table class="tb" style="font-size:10px">';
+  html += '<thead><tr>';
+  for (var h = 0; h < data.headers.length; h++) {
+    html += '<th>' + esc(data.headers[h]) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  
+  // We need to re-fetch the raw CSV rows... but we only have previewRows (mapped)
+  // Let's use the CSV text directly for preview
+  var csvLines = csvText.split(/\r?\n/).filter(function(l) { return l.trim() !== ''; });
+  var maxPreview = Math.min(csvLines.length - 1, 10);
+  for (var pr = 1; pr <= maxPreview; pr++) {
+    // Just show raw line truncated
+    var rawLine = csvLines[pr] || '';
+    // Truncate long lines
+    if (rawLine.length > 200) rawLine = rawLine.substring(0, 200) + '...';
+    html += '<tr><td colspan="' + data.headers.length + '" style="font-family:JetBrains Mono,mono;font-size:9px;color:var(--mt);max-width:600px;overflow:hidden;text-overflow:ellipsis">';
+    html += esc(rawLine);
+    html += '</td></tr>';
+  }
+  html += '</tbody></table>';
+  html += '</div>';
+  
+  // Import button
+  html += '<div class="btn-row">';
+  html += '<button class="btn btn-gn" id="importConfirmBtn" onclick="confirmImport()"><i class="bi bi-upload"></i> Import ' + data.totalRows + ' Rows</button>';
+  html += '<span style="font-size:11px;color:var(--mt)">Review mapping above before importing</span>';
+  html += '</div>';
+  
+  // Store csvText for later use
+  _importCsvText = csvText;
+  _importHeaders = data.headers.slice();
+  
+  var el = document.getElementById('importPreviewContent');
+  el.innerHTML = html;
+  document.getElementById('importPreviewResult').classList.add('show');
+}
+
+function onMappingChange() {
+  // This is called when the user changes a mapping dropdown
+  // We just update the visual, no server call needed
+}
+
+var _importCsvText = null;
+var _importHeaders = null;
+
+function confirmImport() {
+  if (!_importCsvText) { toast('❌ No CSV data to import', 'er'); return; }
+  
+  // Build column mapping from dropdowns: {fieldId: "Header Name"}
+  var columnMapping = {};
+  var selects = document.querySelectorAll('#importPreviewContent select[id^="mapCol_"]');
+  for (var s = 0; s < selects.length; s++) {
+    var sel = selects[s];
+    var fieldId = sel.value;
+    if (fieldId) {
+      // Get the header from the label text before the select
+      var colIndex = parseInt(sel.id.replace('mapCol_', ''), 10);
+      if (_importHeaders && _importHeaders[colIndex] !== undefined) {
+        columnMapping[fieldId] = _importHeaders[colIndex];
+      }
+    }
+  }
+  
+  document.getElementById('loaderImport').classList.remove('hidden');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderImport').classList.add('hidden');
+    _importCsvText = null;
+    
+    if (!r.ok) {
+      toast('❌ Import failed: ' + (r.error || ''), 'er');
+      return;
+    }
+    
+    // Show success result
+    var resultHtml = '<div class="al al-ok" style="margin-bottom:10px"><i class="bi bi-check-circle"></i> ';
+    resultHtml += '<div><strong>' + r.imported + ' records imported</strong>';
+    if (r.skipped > 0) resultHtml += ' — ' + r.skipped + ' skipped';
+    resultHtml += '</div></div>';
+    
+    if (r.errors && r.errors.length > 0) {
+      resultHtml += '<div class="tw" style="max-height:200px;overflow:auto"><table class="tb"><thead><tr><th>Row</th><th>Reason</th></tr></thead><tbody>';
+      for (var e = 0; e < r.errors.length; e++) {
+        resultHtml += '<tr><td style="font-family:JetBrains Mono,mono">' + r.errors[e].row + '</td><td>' + esc(r.errors[e].reason) + '</td></tr>';
+      }
+      resultHtml += '</tbody></table></div>';
+    }
+    
+    resultHtml += '<div class="btn-row" style="margin-top:8px">';
+    resultHtml += '<button class="btn btn-pri btn-sm" onclick="location.reload()"><i class="bi bi-arrow-repeat"></i> Refresh Page</button>';
+    resultHtml += '</div>';
+    
+    document.getElementById('importPreviewContent').innerHTML = resultHtml;
+    
+    toast('✅ Imported ' + r.imported + ' records' + (r.skipped > 0 ? ', ' + r.skipped + ' skipped' : ''), 'ok');
+    
+    // Refresh sync data counts if on sync tab
+    loadSyncData();
+    
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderImport').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).confirmImport(_importCsvText, columnMapping);
+}
+
+// ========== IMPORT HISTORY ==========
+function toggleImportHistory() {
+  var body = document.getElementById('importHistoryBody');
+  var toggle = document.getElementById('importHistoryToggle');
+  var isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  toggle.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+  if (!isOpen) loadImportHistory();
+}
+
+function loadImportHistory() {
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok || !r.history || r.history.length === 0) {
+      document.getElementById('importHistoryTableBody').innerHTML = 
+        '<tr><td colspan="5" style="text-align:center;color:var(--mt)">ไม่มีประวัติการนำเข้า</td></tr>';
+      return;
+    }
+    
+    var html = '';
+    // Show newest first
+    var hist = r.history.slice().reverse();
+    for (var i = 0; i < hist.length; i++) {
+      var h = hist[i];
+      var ts = h.timestamp ? new Date(h.timestamp).toLocaleString('th-TH') : '—';
+      html += '<tr>' +
+        '<td style="font-size:10px;font-family:JetBrains Mono,mono">' + esc(ts) + '</td>' +
+        '<td class="num" style="color:var(--gn)">' + (h.imported || 0) + '</td>' +
+        '<td class="num" style="color:' + (h.skipped > 0 ? 'var(--gold)' : 'var(--mt)') + '">' + (h.skipped || 0) + '</td>' +
+        '<td class="num" style="color:' + (h.errors > 0 ? 'var(--rd)' : 'var(--mt)') + '">' + (h.errors || 0) + '</td>' +
+        '<td style="font-size:10px">' + esc(h.user || '—') + '</td>' +
+        '</tr>';
+    }
+    document.getElementById('importHistoryTableBody').innerHTML = html;
+  }).withFailureHandler(function(e) {
+    document.getElementById('importHistoryTableBody').innerHTML = 
+      '<tr><td colspan="5" style="text-align:center;color:var(--rd)">Error: ' + esc(e.message) + '</td></tr>';
+  }).getImportHistory();
+}
+
+// ========== SYNC PAGE IMPORT ==========
+function loadImportPage() {
+  // Simply show the import tab - already loaded
+  // The import textarea and preview are ready
+}
+
+function syncImportQuickPreview() {
+  var csvText = document.getElementById('syncImportText').value.trim();
+  if (!csvText) { toast('❌ กรุณาใส่ข้อมูล CSV', 'er'); return; }
+  
+  google.script.run.withSuccessHandler(function(r) {
+    var el = document.getElementById('syncImportResult');
+    if (!r.ok) {
+      el.innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + esc(r.error) + '</div>';
+      el.classList.add('show');
+      return;
+    }
+    
+    var html = '<div class="al al-ok" style="margin-bottom:8px"><i class="bi bi-check-circle"></i> ';
+    html += '<div><strong>' + r.totalRows + ' rows</strong> detected · ' + r.headers.length + ' columns · ' + (r.delimiter || ',') + ' delimiter';
+    html += '</div></div>';
+    
+    // List mapped columns
+    html += '<div style="font-size:11px;margin-bottom:8px;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px">';
+    for (var f in r.mappedColumns) {
+      html += '<div><span style="color:var(--gn)">✅</span> ' + f + ' ← <span style="font-family:JetBrains Mono,mono">' + esc(r.mappedColumns[f].header) + '</span></div>';
+    }
+    html += '</div>';
+    
+    if (r.warnings && r.warnings.length > 0) {
+      html += '<div style="font-size:10px;color:var(--gold);margin-bottom:4px">';
+      for (var w = 0; w < r.warnings.length; w++) {
+        html += '⚠️ ' + esc(r.warnings[w]) + '<br>';
+      }
+      html += '</div>';
+    }
+    
+    html += '<div class="btn-row"><button class="btn btn-gn btn-sm" onclick="go(\'import\')"><i class="bi bi-arrow-right"></i> Full Import</button></div>';
+    
+    el.innerHTML = html;
+    el.classList.add('show');
+    
+    // Also populate the import tab's textarea
+    document.getElementById('importCsvText').value = csvText;
+    
+    toast('✅ Preview: ' + r.totalRows + ' rows found', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('syncImportResult').innerHTML = 
+      '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + esc(e.message) + '</div>';
+    document.getElementById('syncImportResult').classList.add('show');
+  }).getImportPreview(csvText);
 }
 
 // ========== ADMIN CONSOLE ==========
@@ -3373,4 +3672,829 @@ function loadApprovalHistory() {
   }).getApprovalHistory(100, 0);
 }
 
+// ========== C4: BUDGET vs ACTUAL ==========
+
+var _budgetRows = [];
+
+function loadBudgetData() {
+  var period = document.getElementById('budgetPeriod').value.trim();
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    toast('กรุณากรอกงวดในรูปแบบ YYYY-MM', 'er');
+    return;
+  }
+  document.getElementById('budgetStatus').textContent = '⏳ กำลังโหลด...';
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok) { document.getElementById('budgetStatus').textContent = '❌ ' + (r.error || ''); return; }
+    _budgetRows = (r.items || []).map(function(it) {
+      return { gl: it.gl, costCenter: it.costCenter, description: it.description, budgetAmount: it.budgetAmount, _selected: false };
+    });
+    renderBudgetTable();
+    document.getElementById('budgetStatus').textContent = '✅ โหลด ' + _budgetRows.length + ' รายการ';
+    toast('✅ โหลดงบประมาณงวด ' + period + ' (' + _budgetRows.length + ' รายการ)', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('budgetStatus').textContent = '❌ ' + e.message;
+  }).getBudgetData(period);
+}
+
+function renderBudgetTable() {
+  var tb = document.getElementById('budgetBody');
+  if (_budgetRows.length === 0) {
+    tb.innerHTML = '<tr id="budgetEmptyRow"><td colspan="5" style="text-align:center;color:var(--mt);padding:20px">ไม่มีรายการ — กด Add Row เพื่อเพิ่ม</td></tr>';
+    updateBudgetTotal();
+    return;
+  }
+  tb.innerHTML = _budgetRows.map(function(row, i) {
+    var selected = row._selected ? 'checked' : '';
+    return '<tr>' +
+      '<td style="text-align:center"><input type="checkbox" class="budget-row-cb" ' + selected + ' onchange="toggleBudgetRowSel(' + i + ')"></td>' +
+      '<td><input class="fi" id="bg_gl_' + i + '" value="' + esc(row.gl) + '" style="width:100%;min-width:80px;font-family:JetBrains Mono,mono;font-size:10px;padding:4px 6px"></td>' +
+      '<td><input class="fi" id="bg_cc_' + i + '" value="' + esc(row.costCenter) + '" style="width:100%;min-width:80px;font-size:10px;padding:4px 6px"></td>' +
+      '<td><input class="fi" id="bg_desc_' + i + '" value="' + esc(row.description) + '" style="width:100%;min-width:120px;font-size:10px;padding:4px 6px"></td>' +
+      '<td><input class="fi" id="bg_amt_' + i + '" type="number" step="0.01" min="0" value="' + (row.budgetAmount || '') + '" style="width:100%;min-width:100px;font-family:JetBrains Mono,mono;font-size:10px;padding:4px 6px;text-align:right" onchange="updateBudgetTotal()"></td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('budgetItemCount').textContent = _budgetRows.length + ' items';
+  updateBudgetTotal();
+}
+
+function updateBudgetTotal() {
+  var total = 0;
+  for (var i = 0; i < _budgetRows.length; i++) {
+    var amtEl = document.getElementById('bg_amt_' + i);
+    if (amtEl) total += Number(amtEl.value) || 0;
+  }
+  document.getElementById('budgetTotal').textContent = total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function addBudgetRow() {
+  _budgetRows.push({ gl: '', costCenter: '', description: '', budgetAmount: 0, _selected: false });
+  renderBudgetTable();
+  // Scroll to bottom
+  var wrap = document.querySelector('#budgetTable').closest('.tw');
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
+}
+
+function toggleBudgetRowSel(i) {
+  _budgetRows[i]._selected = !_budgetRows[i]._selected;
+}
+
+function budgetSelectAllToggle() {
+  var checked = document.getElementById('budgetSelectAll').checked;
+  for (var i = 0; i < _budgetRows.length; i++) {
+    _budgetRows[i]._selected = checked;
+  }
+  renderBudgetTable();
+}
+
+function deleteSelectedBudgetRows() {
+  var before = _budgetRows.length;
+  _budgetRows = _budgetRows.filter(function(r) { return !r._selected; });
+  if (_budgetRows.length === before) { toast('กรุณาเลือกรายการที่จะลบ', 'er'); return; }
+  renderBudgetTable();
+  toast('✅ ลบ ' + (before - _budgetRows.length) + ' รายการ', 'ok');
+}
+
+function saveBudgetData() {
+  var period = document.getElementById('budgetPeriod').value.trim();
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    toast('กรุณากรอกงวดในรูปแบบ YYYY-MM', 'er');
+    return;
+  }
+  // Read current values from inputs
+  var items = [];
+  for (var i = 0; i < _budgetRows.length; i++) {
+    var glEl = document.getElementById('bg_gl_' + i);
+    var ccEl = document.getElementById('bg_cc_' + i);
+    var descEl = document.getElementById('bg_desc_' + i);
+    var amtEl = document.getElementById('bg_amt_' + i);
+    if (glEl && amtEl) {
+      var gl = glEl.value.trim();
+      var amt = Number(amtEl.value) || 0;
+      if (gl && amt > 0) {
+        items.push({
+          gl: gl,
+          costCenter: ccEl ? ccEl.value.trim() : '',
+          description: descEl ? descEl.value.trim() : '',
+          budgetAmount: amt
+        });
+      }
+    }
+  }
+  
+  if (items.length === 0) { toast('❌ ต้องมีรายการงบประมาณอย่างน้อย 1 รายการ', 'er'); return; }
+  
+  document.getElementById('budgetStatus').textContent = '⏳ กำลังบันทึก...';
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.ok) {
+      document.getElementById('budgetStatus').textContent = '✅ ' + r.message;
+      toast('✅ ' + r.message, 'ok');
+      // Reload to get clean state
+      loadBudgetData();
+    } else {
+      document.getElementById('budgetStatus').textContent = '❌ ' + (r.error || '');
+      toast('❌ ' + (r.error || 'Error'), 'er');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('budgetStatus').textContent = '❌ ' + e.message;
+  }).setBudgetData(period, items);
+}
+
+function loadBudgetVsActual() {
+  var period = document.getElementById('budgetPeriod').value.trim();
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    toast('กรุณากรอกงวดในรูปแบบ YYYY-MM', 'er');
+    return;
+  }
+  
+  document.getElementById('budgetStatus').textContent = '⏳ กำลังเปรียบเทียบ...';
+  document.getElementById('resultBudgetVsActual').classList.remove('show');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('budgetStatus').textContent = '✅ เปรียบเทียบเรียบร้อย';
+    if (!r.ok) { toast('❌ ' + (r.error || ''), 'er'); return; }
+    
+    document.getElementById('bvaPeriod').textContent = r.period;
+    document.getElementById('bvaBudget').textContent = '฿' + fmt(r.budget);
+    document.getElementById('bvaActual').textContent = '฿' + fmt(r.actual);
+    
+    // Variance coloring
+    var varEl = document.getElementById('bvaVariance');
+    varEl.textContent = (r.variance >= 0 ? '+' : '') + '฿' + fmt(Math.abs(r.variance));
+    varEl.style.color = r.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
+    document.getElementById('bvaVarianceCard').style.borderLeftColor = r.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
+    
+    var pctEl = document.getElementById('bvaPct');
+    pctEl.textContent = r.variancePct >= 999 ? '—' : r.variancePct.toFixed(2) + '%';
+    pctEl.style.color = r.variancePct <= 100 ? 'var(--gn)' : 'var(--rd)';
+    
+    // Render table
+    var tb = document.getElementById('bvaBody');
+    if (r.items && r.items.length > 0) {
+      tb.innerHTML = r.items.map(function(it) {
+        var varColor = it.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
+        return '<tr>' +
+          '<td style="font-family:JetBrains Mono,mono">' + esc(it.gl) + '</td>' +
+          '<td style="font-family:JetBrains Mono,mono">' + esc(it.costCenter) + '</td>' +
+          '<td>' + esc(it.description) + '</td>' +
+          '<td class="num">฿' + fmt(it.budget) + '</td>' +
+          '<td class="num">฿' + fmt(it.actual) + '</td>' +
+          '<td class="num" style="color:' + varColor + '">' + (it.variance >= 0 ? '+' : '') + '฿' + fmt(it.variance) + '</td>' +
+          '<td class="num" style="color:' + varColor + '">' + (it.pct >= 999 ? '—' : it.pct.toFixed(2) + '%') + '</td>' +
+          '</tr>';
+      }).join('');
+    } else {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mt)">No items</td></tr>';
+    }
+    
+    // Render chart
+    renderBudgetVsActualChart(r);
+    
+    document.getElementById('resultBudgetVsActual').classList.add('show');
+    toast('✅ Budget vs Actual for ' + r.period, 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('budgetStatus').textContent = '❌ ' + e.message;
+  }).getBudgetVsActual(period);
+}
+
+function renderBudgetVsActualChart(r) {
+  destroyCharts();
+  if (!r.items || r.items.length === 0) return;
+  
+  var ctx = document.getElementById('bvaChart');
+  if (!ctx) return;
+  ctx = ctx.getContext('2d');
+  
+  var isLight = document.body.classList.contains('light');
+  var tickColor = isLight ? '#88827a' : '#676460';
+  var gridColor = isLight ? 'rgba(0,0,0,.06)' : 'rgba(255,255,255,.06)';
+  
+  var labels = r.items.map(function(it) { return it.gl; });
+  var budgetData = r.items.map(function(it) { return it.budget; });
+  var actualData = r.items.map(function(it) { return it.actual; });
+  
+  chartInstances.bva = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Budget',
+          data: budgetData,
+          backgroundColor: 'rgba(88,136,187,.6)',
+          borderRadius: 3
+        },
+        {
+          label: 'Actual',
+          data: actualData,
+          backgroundColor: 'rgba(201,169,110,.6)',
+          borderRadius: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: tickColor, font: { size: 10 }, boxWidth: 12, padding: 8 } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 9 } } },
+        y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 9 }, callback: function(v) { return fmt(v); } } }
+      }
+    }
+  });
+}
+
+// ========== C5: CUSTOMIZABLE DASHBOARD ==========
+
+function openDashConfig() {
+  // Load current config
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok || !r.config) return;
+    var cfg = r.config;
+    document.getElementById('dashCfgShowKPIs').checked = cfg.showKPIs !== false;
+    document.getElementById('dashCfgShowCharts').checked = cfg.showCharts !== false;
+    document.getElementById('dashCfgShowBudget').checked = cfg.showBudget !== false;
+    document.getElementById('dashCfgShowRunningBalance').checked = cfg.showRunningBalance !== false;
+    document.getElementById('dashConfigOverlay').style.display = 'block';
+    document.getElementById('dashConfigModal').style.display = 'flex';
+    document.getElementById('dashConfigModal').style.flexDirection = 'column';
+  }).getDashboardConfig();
+}
+
+function closeDashConfig() {
+  document.getElementById('dashConfigOverlay').style.display = 'none';
+  document.getElementById('dashConfigModal').style.display = 'none';
+}
+
+function saveDashConfig() {
+  var config = {
+    showKPIs: document.getElementById('dashCfgShowKPIs').checked,
+    showCharts: document.getElementById('dashCfgShowCharts').checked,
+    showBudget: document.getElementById('dashCfgShowBudget').checked,
+    showRunningBalance: document.getElementById('dashCfgShowRunningBalance').checked
+  };
+  
+  google.script.run.withSuccessHandler(function(r) {
+    closeDashConfig();
+    if (r.ok) {
+      toast('✅ Dashboard settings saved', 'ok');
+      loadDashboard(); // Reload dashboard with new config
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+    }
+  }).saveDashboardConfig(config);
+}
+
+function resetDashConfig() {
+  if (!confirm('รีเซ็ตการตั้งค่า Dashboard เป็นค่าเริ่มต้น?')) return;
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.ok) {
+      toast('✅ Dashboard settings reset', 'ok');
+      closeDashConfig();
+      loadDashboard();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+    }
+  }).resetDashboardConfig();
+}
+
+// ========== PATCH: update loadDashboard for Budget KPIs + Config ==========
+// We override the loadDashboard to also show budget KPIs and respect config
+var _origLoadDashboard = loadDashboard;
+loadDashboard = function() {
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok) { document.getElementById('dashSub').textContent = 'Error: ' + (r.error || ''); return; }
+    
+    var config = r.dashboardConfig || {};
+    
+    // Apply config visibility
+    var showKPIs = config.showKPIs !== false;
+    var showCharts = config.showCharts !== false;
+    var showBudget = config.showBudget !== false;
+    var showRunningBalance = config.showRunningBalance !== false;
+    
+    // Show/hide KPI sections
+    document.getElementById('kpiNewRow1').style.display = showKPIs ? 'grid' : 'none';
+    document.getElementById('kpiNewRow2').style.display = showKPIs ? 'grid' : 'none';
+    document.getElementById('dashKpis').style.display = showKPIs ? 'grid' : 'none';
+    
+    // Show/hide charts
+    document.querySelectorAll('.chart-grid').forEach(function(el) { el.style.display = showCharts ? 'grid' : 'none'; });
+    document.querySelectorAll('#secDashboard .card').forEach(function(el) {
+      // Keep budget KPI card, running balance, expiring, data quality, freshness visible
+      if (el.id === 'runningBalanceCard') return;
+      if (el.querySelector('h3') && (el.querySelector('h3').textContent.indexOf('กราฟ') >= 0 || 
+          el.querySelector('h3').textContent.indexOf('Chart') >= 0 ||
+          el.querySelector('h3').textContent.indexOf('แนวโน้ม') >= 0)) {
+        // Chart cards are handled by .chart-grid already
+      }
+    });
+    // Show/hide chart cards specifically
+    var chartCards = document.querySelectorAll('#secDashboard .card .chart-wrap');
+    chartCards.forEach(function(cw) {
+      var card = cw.closest('.card');
+      if (card) card.style.display = showCharts ? 'block' : 'none';
+    });
+    
+    // Show/hide Budget KPIs
+    var budgetKpis = document.getElementById('budgetKpis');
+    if (budgetKpis) {
+      if (showBudget && r.budgetSummary) {
+        budgetKpis.style.display = 'grid';
+        var bs = r.budgetSummary;
+        document.getElementById('dBudgetTotal').textContent = '฿' + fmt(bs.totalBudget);
+        document.getElementById('dBudgetActual').textContent = '฿' + fmt(bs.totalActual);
+        var varEl = document.getElementById('dBudgetVariance');
+        varEl.textContent = (bs.variance >= 0 ? '+' : '') + '฿' + fmt(Math.abs(bs.variance));
+        varEl.style.color = bs.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
+        document.getElementById('dBudgetVarianceCard').style.borderLeftColor = bs.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
+        var pctEl = document.getElementById('dBudgetPct');
+        pctEl.textContent = bs.variancePct >= 999 ? '—' : bs.variancePct.toFixed(2) + '%';
+        pctEl.style.color = bs.variancePct <= 100 ? 'var(--gn)' : 'var(--rd)';
+      } else {
+        budgetKpis.style.display = 'none';
+      }
+    }
+    
+    // Show/hide Running Balance
+    var rbCard = document.getElementById('runningBalanceCard');
+    if (rbCard) rbCard.style.display = showRunningBalance ? 'block' : 'none';
+    
+    // Now call original loadDashboard logic to populate the rest
+    _callOrigLoadDashboard(r);
+    
+  }).withFailureHandler(function(e) {
+    document.getElementById('dashSub').textContent = 'Error: ' + e.message;
+    document.getElementById('statusTxt').textContent = 'Error';
+    document.getElementById('statusDot').className = 'dot r';
+  }).getDashboardData();
+};
+
+// Helper to call original loadDashboard rendering logic
+function _callOrigLoadDashboard(r) {
+  // Existing KPIs
+  document.getElementById('dTotalItems').textContent = r.totalItems.toLocaleString();
+  document.getElementById('dTotalAmt').textContent = fmt(r.totalAmortization);
+  document.getElementById('dCurPeriod').textContent = r.currentPeriod;
+  document.getElementById('dashSub').textContent = r.totalItems.toLocaleString() + ' รายการ · ' + r.currentPeriod;
+  document.getElementById('statusTxt').textContent = r.totalItems + ' rec';
+  document.getElementById('statusDot').className = 'dot g';
+  
+  // New KPI Row 1
+  document.getElementById('dActiveItems').textContent = r.activeItems !== undefined ? r.activeItems.toLocaleString() : '—';
+  document.getElementById('dCompletedItems').textContent = 'Completed: ' + (r.completedItems !== undefined ? r.completedItems.toLocaleString() : '—');
+  document.getElementById('dTotalRemaining').textContent = r.totalRemaining !== undefined ? '฿' + fmt(r.totalRemaining) : '—';
+  document.getElementById('dAvgDuration').textContent = r.avgDurationMonths !== undefined ? r.avgDurationMonths.toFixed(1) : '—';
+  document.getElementById('dExpiringThisMonth').textContent = r.expiringThisMonth !== undefined ? r.expiringThisMonth.toLocaleString() : '—';
+  if (r.momChange && r.momChange.changePercent !== undefined && r.momChange.changePercent !== null) {
+    var momV = r.momChange.changePercent;
+    document.getElementById('dMomChange').textContent = (momV > 0 ? '+' : '') + momV.toFixed(1) + '%';
+    document.getElementById('dMomChange').style.color = momV >= 0 ? 'var(--gn)' : 'var(--rd)';
+    document.getElementById('dMomPeriod').textContent = r.momChange.period || '';
+  } else {
+    document.getElementById('dMomChange').textContent = '—';
+    document.getElementById('dMomPeriod').textContent = '';
+  }
+  
+  // New KPI Row 2 — Largest Item
+  if (r.largestItem) {
+    document.getElementById('dLargestItem').textContent = (r.largestItem.docNo || '') + ' — ' + (r.largestItem.description || '').substring(0, 40);
+    document.getElementById('dLargestAmt').textContent = '฿' + fmt(r.largestItem.amount);
+  } else {
+    document.getElementById('dLargestItem').textContent = '—';
+    document.getElementById('dLargestAmt').textContent = '';
+  }
+  // Health Score
+  var hs = r.healthScore !== undefined ? r.healthScore : 0;
+  document.getElementById('dHealthScore').textContent = hs + '%';
+  var bar = document.getElementById('dHealthBar');
+  bar.style.width = hs + '%';
+  bar.style.background = hs >= 80 ? 'var(--gn)' : hs >= 50 ? 'var(--gold)' : 'var(--rd)';
+  
+  // Data Freshness
+  var freshnessEl = document.getElementById('dataFreshnessBody');
+  var now = new Date();
+  freshnessEl.innerHTML =
+    '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px">' +
+    '<span style="color:var(--mt)">Last Checked:</span><span>' + now.toLocaleString('th-TH') + '</span>' +
+    '<span style="color:var(--mt)">Data Source:</span><span>Input Sheet (' + (r.totalItems || 0) + ' records)</span>' +
+    '<span style="color:var(--mt)">Refresh:</span><span>Auto (5-min cache)</span>' +
+    '<span style="color:var(--mt)">Status:</span><span><span class="dot g" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> Online</span>' +
+    '</div>';
+  
+  // Render all charts
+  renderCharts(r);
+  // Phase A: drill-down dashboard
+  setTimeout(function() { setupDashboardDrillDown(r); }, 50);
+  // B5: Load Running Balance data
+  setTimeout(function() { loadRunningBalance(r); }, 200);
+}
+
+// ========== PATCH: Add budget to go() routing ==========
+var _origGo = go;
+go = function(p) {
+  // Call original navigation
+  _origGo(p);
+  // Load budget-specific data
+  if (p === 'budget') {
+    // Set default period to current month
+    var now = new Date();
+    var defaultPeriod = now.getFullYear() + '-' + (now.getMonth() + 1 < 10 ? '0' : '') + (now.getMonth() + 1);
+    document.getElementById('budgetPeriod').value = defaultPeriod;
+    document.getElementById('resultBudgetVsActual').classList.remove('show');
+  }
+};
+
+// ========== PATCH: Extend bnMap for budget ==========
+// (The bnMap in the original go function needs budget)
+// We'll patch it dynamically
+(function() {
+  var origPagGo = window.go;
+  // Patch is handled above
+})();
+
+// ========== C6: GL RECONCILIATION ==========
+
+var _glreconGlAccounts = [];
+var _glreconBalances = [];
+
+function loadGLRecon() {
+  // Set default period to current month
+  var now = new Date();
+  var defaultPeriod = now.getFullYear() + '-' + (now.getMonth() < 9 ? '0' : '') + (now.getMonth() + 1);
+  document.getElementById('glreconPeriod').value = defaultPeriod;
+  document.getElementById('glreconPeriodDisplay').textContent = defaultPeriod;
+  
+  // Load GL accounts from system
+  loadGLAccountSummary();
+  
+  // Check if saved balances exist for this period
+  loadGLBalances();
+  
+  // Set default tab
+  setGLReconTab('input');
+}
+
+function loadGLAccountSummary() {
+  document.getElementById('glreconBalanceBody').innerHTML = 
+    '<tr><td colspan="5" style="text-align:center;color:var(--mt);padding:20px">⏳ กำลังโหลด GL accounts...</td></tr>';
+  
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok || !r.accounts) {
+      document.getElementById('glreconBalanceBody').innerHTML = 
+        '<tr><td colspan="5" style="text-align:center;color:var(--mt)">' + (r.error || 'Error') + '</td></tr>';
+      return;
+    }
+    _glreconGlAccounts = r.accounts;
+    renderGLBalanceTable();
+  }).withFailureHandler(function(e) {
+    document.getElementById('glreconBalanceBody').innerHTML = 
+      '<tr><td colspan="5" style="text-align:center;color:var(--rd)">Error: ' + e.message + '</td></tr>';
+  }).getGLSummary();
+}
+
+function loadGLBalances() {
+  var period = document.getElementById('glreconPeriod').value.trim();
+  if (!period) return;
+  
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.ok && r.balances) {
+      _glreconBalances = r.balances.slice();
+      renderGLBalanceTable();
+    }
+  }).withFailureHandler(function(e) {
+    // silent
+  }).getGLBalances(period);
+}
+
+function renderGLBalanceTable() {
+  var tbody = document.getElementById('glreconBalanceBody');
+  var empty = document.getElementById('glreconBalanceEmpty');
+  
+  // Build a lookup of existing balances by glCode
+  var balanceMap = {};
+  for (var i = 0; i < _glreconBalances.length; i++) {
+    balanceMap[_glreconBalances[i].glCode] = _glreconBalances[i].balance;
+  }
+  
+  // Start with system accounts, then add any custom GLs from saved balances
+  var allGlCodes = {};
+  var rows = [];
+  
+  // System accounts first
+  for (var i = 0; i < _glreconGlAccounts.length; i++) {
+    var acc = _glreconGlAccounts[i];
+    allGlCodes[acc.glCode] = true;
+    rows.push({
+      glCode: acc.glCode,
+      glName: acc.glName,
+      systemAmount: acc.totalAmount,
+      balance: balanceMap[acc.glCode] !== undefined ? balanceMap[acc.glCode] : 0,
+      isSystem: true
+    });
+  }
+  
+  // Add any custom GLs from saved balances not in system
+  for (var i = 0; i < _glreconBalances.length; i++) {
+    if (!allGlCodes[_glreconBalances[i].glCode]) {
+      rows.push({
+        glCode: _glreconBalances[i].glCode,
+        glName: _glreconBalances[i].glName || '(custom)',
+        systemAmount: 0,
+        balance: _glreconBalances[i].balance,
+        isSystem: false
+      });
+    }
+  }
+  
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt);padding:20px">ไม่มี GL accounts ในระบบ</td></tr>';
+    document.getElementById('glreconBalanceCount').textContent = '0 accounts';
+    return;
+  }
+  
+  var html = '';
+  var totalSystem = 0;
+  var totalBalance = 0;
+  
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    totalSystem += r.systemAmount;
+    totalBalance += r.balance;
+    html += '<tr>' +
+      '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(r.glCode) + '</td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px">' + esc(r.glName || '') + 
+      (!r.isSystem ? ' <span style="color:var(--gold);font-size:9px">(custom)</span>' : '') + '</td>' +
+      '<td class="num" style="font-size:11px">฿' + fmt(r.systemAmount) + '</td>' +
+      '<td class="num"><input class="fi" type="number" step="0.01" style="max-width:140px;font-size:11px;padding:4px 8px;text-align:right;font-family:JetBrains Mono,mono" ' +
+      'id="glb_' + esc(r.glCode) + '" value="' + r.balance + '" onchange="updateGLReconTotals()" onkeyup="updateGLReconTotals()"></td>' +
+      '<td style="text-align:center">' +
+      '<button class="btn btn-ghost btn-sm" onclick="removeGLRow(\\'' + esc(r.glCode) + '\\')" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td></tr>';
+  }
+  
+  tbody.innerHTML = html;
+  document.getElementById('glreconBalanceCount').textContent = rows.length + ' accounts';
+  document.getElementById('glreconSystemTotal').textContent = fmt(totalSystem);
+  document.getElementById('glreconEnteredTotal').textContent = fmt(totalBalance);
+}
+
+function updateGLReconTotals() {
+  var rows = document.querySelectorAll('#glreconBalanceBody tr');
+  var total = 0;
+  rows.forEach(function(row) {
+    var inp = row.querySelector('input[type=number]');
+    if (inp) total += parseFloat(inp.value) || 0;
+  });
+  document.getElementById('glreconEnteredTotal').textContent = fmt(total);
+}
+
+function addGLBalanceRow() {
+  var tbody = document.getElementById('glreconBalanceBody');
+  // Check if empty row exists
+  var emptyMsg = tbody.querySelector('td[colspan]');
+  if (emptyMsg) {
+    tbody.innerHTML = '';
+  }
+  var glCode = prompt('Enter GL Code:');
+  if (!glCode) return;
+  glCode = glCode.trim();
+  if (!glCode) return;
+  
+  var glName = prompt('Enter GL Name (optional):');
+  
+  var tr = document.createElement('tr');
+  tr.innerHTML = 
+    '<td style="font-family:JetBrains Mono,mono;font-size:10px"><input class="fi" style="max-width:100px;font-size:10px;padding:3px 6px" id="glb_custom_' + esc(glCode) + '" value="' + esc(glCode) + '" readonly></td>' +
+    '<td style="font-size:11px">' + esc(glName || '(custom)') + ' <span style="color:var(--gold);font-size:9px">(custom)</span></td>' +
+    '<td class="num" style="font-size:11px">฿0.00</td>' +
+    '<td class="num"><input class="fi" type="number" step="0.01" style="max-width:140px;font-size:11px;padding:4px 8px;text-align:right;font-family:JetBrains Mono,mono" ' +
+    'id="glb_' + esc(glCode) + '" value="0" onchange="updateGLReconTotals()" onkeyup="updateGLReconTotals()"></td>' +
+    '<td style="text-align:center">' +
+    '<button class="btn btn-ghost btn-sm" onclick="this.closest(\\'tr\\').remove();updateGLReconTotals()" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td>';
+  tbody.appendChild(tr);
+  updateGLReconTotals();
+}
+
+function removeGLRow(glCode) {
+  var inp = document.getElementById('glb_' + glCode);
+  if (inp) {
+    var tr = inp.closest('tr');
+    if (tr) tr.remove();
+  }
+  updateGLReconTotals();
+}
+
+function saveGLBalances() {
+  var period = document.getElementById('glreconPeriod').value.trim();
+  if (!period || !/^\\d{4}-\\d{2}$/.test(period)) {
+    toast('กรุณากรอกงวดในรูปแบบ YYYY-MM', 'er');
+    return;
+  }
+  
+  // Gather all GL balances from the table
+  var balances = [];
+  var rows = document.querySelectorAll('#glreconBalanceBody tr');
+  rows.forEach(function(row) {
+    var inputs = row.querySelectorAll('input[type=number]');
+    if (inputs.length === 0) return;
+    var inp = inputs[0];
+    // Get GL code from the first td's input or text
+    var glCodeTd = row.querySelector('td:first-child');
+    if (!glCodeTd) return;
+    var glCodeInput = glCodeTd.querySelector('input');
+    var glCode = glCodeInput ? glCodeInput.value.trim() : glCodeTd.textContent.trim();
+    if (!glCode) return;
+    
+    var glNameTd = row.querySelector('td:nth-child(2)');
+    var glName = glNameTd ? glNameTd.textContent.replace(/\\(custom\\)/g, '').trim() : '';
+    
+    var balance = parseFloat(inp.value) || 0;
+    balances.push({glCode: glCode, glName: glName, balance: balance});
+  });
+  
+  if (balances.length === 0) {
+    toast('ไม่มีข้อมูล GL Balance', 'er');
+    return;
+  }
+  
+  document.getElementById('loaderGLReconGlobal').classList.remove('hidden');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    if (r.ok) {
+      toast('✅ ' + r.message, 'ok');
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).saveGLBalance(period, balances);
+}
+
+function setGLReconTab(tab) {
+  // Update tab buttons
+  ['input', 'recon', 'history'].forEach(function(t) {
+    var btn = document.getElementById('glreconTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) btn.className = 'btn ' + (t === tab ? 'btn-pri' : 'btn-ghost');
+  });
+  
+  document.getElementById('glreconInputContent').style.display = tab === 'input' ? 'block' : 'none';
+  document.getElementById('glreconReconContent').style.display = tab === 'recon' ? 'block' : 'none';
+  document.getElementById('glreconHistoryContent').style.display = tab === 'history' ? 'block' : 'none';
+  
+  if (tab === 'history') loadGLReconHistory();
+  if (tab === 'recon') document.getElementById('resultGLRecon').classList.remove('show');
+}
+
+function runGLRecon() {
+  var period = document.getElementById('glreconPeriod').value.trim();
+  if (!period || !/^\\d{4}-\\d{2}$/.test(period)) {
+    toast('กรุณากรอกงวดในรูปแบบ YYYY-MM', 'er');
+    return;
+  }
+  
+  document.getElementById('loaderGLRecon').classList.remove('hidden');
+  document.getElementById('resultGLRecon').classList.remove('show');
+  document.getElementById('glreconReconResults').style.display = 'none';
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderGLRecon').classList.add('hidden');
+    if (!r.ok) {
+      document.getElementById('resultGLRecon').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>';
+      document.getElementById('resultGLRecon').classList.add('show');
+      return;
+    }
+    
+    // Summary KPIs
+    document.getElementById('glreconGLBalanceTotal').textContent = '฿' + fmt(r.totalGLBalance);
+    document.getElementById('glreconSystemTotalKpi').textContent = '฿' + fmt(r.totalSystemBalance);
+    document.getElementById('glreconDifferenceTotal').textContent = '฿' + fmt(r.totalDifference);
+    
+    // Color code the diff card
+    var diffCard = document.getElementById('glreconDiffCard');
+    var diffVal = Math.abs(r.totalDifference);
+    var glTotal = r.totalGLBalance || 1;
+    var diffPct = diffVal / glTotal;
+    if (diffVal < 0.01) {
+      diffCard.className = 'kpi gn';
+    } else if (diffPct < 0.01) {
+      diffCard.className = 'kpi';
+    } else if (diffPct < 0.05) {
+      diffCard.className = 'kpi';
+    } else {
+      diffCard.className = 'kpi rd';
+    }
+    
+    // Detail table
+    var tb = document.getElementById('glreconReconBody');
+    if (!r.items || r.items.length === 0) {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mt)">No items</td></tr>';
+    } else {
+      tb.innerHTML = r.items.map(function(it) {
+        var diffAbs = Math.abs(it.difference);
+        var color = 'var(--gn)';
+        var icon = '✅';
+        if (diffAbs > 0.01) {
+          if (it.diffPercent <= 1) { color = 'var(--gold)'; icon = '⚠️'; }
+          else { color = 'var(--rd)'; icon = '❌'; }
+        }
+        return '<tr>' +
+          '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(it.glCode) + '</td>' +
+          '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;font-size:11px">' + esc(it.glName || '') + '</td>' +
+          '<td class="num" style="font-size:11px">฿' + fmt(it.glBalance) + '</td>' +
+          '<td class="num" style="font-size:11px">฿' + fmt(it.systemTotal) + '</td>' +
+          '<td class="num" style="font-size:11px;color:' + color + '">' + (it.difference >= 0 ? '+' : '') + '฿' + fmt(it.difference) + '</td>' +
+          '<td class="num" style="font-size:11px;color:' + color + '">' + (it.diffPercent !== undefined ? it.diffPercent.toFixed(1) + '%' : '—') + '</td>' +
+          '<td style="text-align:center;font-size:14px">' + icon + '</td></tr>';
+      }).join('');
+    }
+    
+    document.getElementById('glreconReconResults').style.display = 'block';
+    toast('✅ Reconciliation completed for ' + period, 'ok');
+    
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderGLRecon').classList.add('hidden');
+    document.getElementById('resultGLRecon').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + e.message + '</div>';
+    document.getElementById('resultGLRecon').classList.add('show');
+    toast('❌ ' + e.message, 'er');
+  }).runGLReconciliation(period);
+}
+
+function exportGLReconReport() {
+  var period = document.getElementById('glreconPeriod').value.trim();
+  if (!period) { toast('กรุณาระบุงวด', 'er'); return; }
+  
+  document.getElementById('loaderGLReconGlobal').classList.remove('hidden');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    if (!r.ok) {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      return;
+    }
+    
+    // Show report in result box
+    var el = document.getElementById('resultGLReconExport');
+    el.innerHTML = '<div class="al al-ok"><i class="bi bi-check-circle"></i> Report generated</div>' +
+      '<pre style="background:var(--bg);border:1px solid var(--bdr);border-radius:5px;padding:14px;margin-top:8px;font-family:JetBrains Mono,mono;font-size:10px;max-height:400px;overflow:auto;white-space:pre-wrap">' +
+      esc(r.report) + '</pre>' +
+      '<div class="btn-row" style="margin-top:8px">' +
+      '<button class="btn btn-ghost btn-sm" onclick="copyGLReconReport()"><i class="bi bi-clipboard"></i> Copy to Clipboard</button>' +
+      '</div>';
+    el.classList.add('show');
+    toast('✅ Report generated', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).exportReconciliationReport(period);
+}
+
+function copyGLReconReport() {
+  var pre = document.querySelector('#resultGLReconExport pre');
+  if (!pre) return;
+  var text = pre.textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    toast('✅ Copied to clipboard', 'ok');
+  }).catch(function() {
+    toast('❌ Failed to copy', 'er');
+  });
+}
+
+function loadGLReconHistory() {
+  document.getElementById('loaderGLReconGlobal').classList.remove('hidden');
+  
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    if (!r.ok || !r.history) {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      return;
+    }
+    
+    var tb = document.getElementById('glreconHistoryBody');
+    if (r.history.length === 0) {
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--mt)">ไม่มีประวัติ</td></tr>';
+      return;
+    }
+    
+    tb.innerHTML = r.history.map(function(h) {
+      var diffAbs = Math.abs(h.totalDifference);
+      var statusIcon = h.status === 'PASS' ? '✅' : (h.status === 'WARN' ? '⚠️' : '❌');
+      var statusColor = h.status === 'PASS' ? 'var(--gn)' : (h.status === 'WARN' ? 'var(--gold)' : 'var(--rd)');
+      return '<tr>' +
+        '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(h.id) + '</td>' +
+        '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(h.period) + '</td>' +
+        '<td style="font-size:10px">' + esc(h.ranAt.substring(0, 16).replace('T', ' ')) + '</td>' +
+        '<td style="font-size:10px">' + esc(h.ranBy || '—') + '</td>' +
+        '<td class="num" style="font-size:11px">฿' + fmt(h.totalGLBalance) + '</td>' +
+        '<td class="num" style="font-size:11px">฿' + fmt(h.totalSystemBalance) + '</td>' +
+        '<td class="num" style="font-size:11px;color:' + statusColor + '">' + (h.totalDifference >= 0 ? '+' : '') + '฿' + fmt(h.totalDifference) + '</td>' +
+        '<td style="text-align:center;font-size:14px;color:' + statusColor + '">' + statusIcon + ' ' + esc(h.status) + '</td></tr>';
+    }).join('');
+    toast('✅ โหลดประวัติ ' + r.total + ' รายการ', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderGLReconGlobal').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getReconciliationHistory(100, 0);
+}
 </script>

@@ -1,3 +1,273 @@
+// ================= DASHBOARD CONFIG =================
+var DASHBOARD_CONFIG_DEFAULTS = {
+  showKPIs: true,
+  showCharts: true,
+  showBudget: true,
+  showRunningBalance: true,
+  visibleKpis: ['totalItems','totalAmt','curPeriod','avgConsumed','activeItems','completedItems','totalRemaining','avgDuration','expiringThisMonth','momChange','largestItem','healthScore'],
+  kpiOrder: ['totalItems','totalAmt','curPeriod','avgConsumed','activeItems','completedItems','totalRemaining','avgDuration','expiringThisMonth','momChange','largestItem','healthScore']
+};
+
+function saveDashboardConfig(config) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('dashboardConfig', JSON.stringify(config));
+    logAction('Dashboard', 'Dashboard config saved');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function getDashboardConfig() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty('dashboardConfig');
+    if (saved) {
+      var parsed = JSON.parse(saved);
+      // Merge with defaults for any missing keys
+      for (var k in DASHBOARD_CONFIG_DEFAULTS) {
+        if (parsed[k] === undefined) parsed[k] = DASHBOARD_CONFIG_DEFAULTS[k];
+      }
+      return { ok: true, config: parsed };
+    }
+    return { ok: true, config: JSON.parse(JSON.stringify(DASHBOARD_CONFIG_DEFAULTS)) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function resetDashboardConfig() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty('dashboardConfig');
+    logAction('Dashboard', 'Dashboard config reset to defaults');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ================= BUDGET DATA =================
+
+/**
+ * Save budget entries for a period
+ * @param {string} period - YYYY-MM
+ * @param {Array} items - [{gl, costCenter, description, budgetAmount}, ...]
+ */
+function setBudgetData(period, items) {
+  try {
+    if (!period) return { ok: false, error: 'กรุณาระบุงวด' };
+    var props = PropertiesService.getScriptProperties();
+    var allBudget = {};
+    var saved = props.getProperty('budgetData');
+    if (saved) allBudget = JSON.parse(saved);
+    
+    // Clean items
+    var cleanItems = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it.gl && it.budgetAmount && Number(it.budgetAmount) > 0) {
+        cleanItems.push({
+          gl: String(it.gl).trim(),
+          costCenter: String(it.costCenter || '').trim(),
+          description: String(it.description || '').trim(),
+          budgetAmount: Math.round(Number(it.budgetAmount) * 100) / 100
+        });
+      }
+    }
+    
+    allBudget[period] = cleanItems;
+    props.setProperty('budgetData', JSON.stringify(allBudget));
+    
+    // Invalidate cache
+    try { CacheService.getScriptCache().remove('dash_v2'); } catch(e) {}
+    logAction('Budget', 'Budget data saved for period ' + period + ' (' + cleanItems.length + ' items)');
+    
+    return { ok: true, message: 'บันทึกงบประมาณสำหรับงวด ' + period + ' เรียบร้อย (' + cleanItems.length + ' รายการ)' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Get budget entries for a period
+ */
+function getBudgetData(period) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty('budgetData');
+    if (!saved) return { ok: true, period: period, items: [] };
+    var allBudget = JSON.parse(saved);
+    var items = allBudget[period] || [];
+    return { ok: true, period: period, items: items };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Get all periods that have budget data
+ */
+function getAllBudgetPeriods() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty('budgetData');
+    if (!saved) return { ok: true, periods: [] };
+    var allBudget = JSON.parse(saved);
+    var periods = Object.keys(allBudget).sort();
+    return { ok: true, periods: periods };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Compare budget with actual amortization for a period
+ */
+function getBudgetVsActual(period) {
+  try {
+    if (!period) return { ok: false, error: 'กรุณาระบุงวด' };
+    
+    // Get budget data
+    var budgetResult = getBudgetData(period);
+    if (!budgetResult.ok) return budgetResult;
+    var budgetItems = budgetResult.items || [];
+    
+    // Get actual amortization data from existing engine
+    var items = readInputData_();
+    var actualMap = {};
+    var actualByName = {};
+    
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var schedule = calculateAmortization_(item, period);
+      for (var j = 0; j < schedule.length; j++) {
+        var s = schedule[j];
+        if (s.period !== period) continue;
+        var gl = s.glPrepaid || 'N/A';
+        var cc = s.costCenter || 'N/A';
+        var key = gl + '|' + cc;
+        if (!actualMap[key]) {
+          actualMap[key] = { gl: gl, costCenter: cc, costName: s.costName || '', amount: 0 };
+        }
+        actualMap[key].amount += s.amortAmount;
+      }
+    }
+    
+    // Round actual amounts
+    for (var k in actualMap) {
+      actualMap[k].amount = Math.round(actualMap[k].amount * 100) / 100;
+    }
+    
+    // Build comparison items
+    var comparisonItems = [];
+    var totalBudget = 0;
+    var totalActual = 0;
+    
+    // Process budget items
+    for (var i = 0; i < budgetItems.length; i++) {
+      var bi = budgetItems[i];
+      var key = bi.gl + '|' + bi.costCenter;
+      var actual = actualMap[key] ? actualMap[key].amount : 0;
+      delete actualMap[key]; // remove matched items
+      
+      var variance = actual - bi.budgetAmount;
+      var pct = bi.budgetAmount > 0 ? Math.round((actual / bi.budgetAmount) * 10000) / 100 : (actual > 0 ? 999 : 0);
+      
+      comparisonItems.push({
+        gl: bi.gl,
+        costCenter: bi.costCenter,
+        description: bi.description,
+        budget: bi.budgetAmount,
+        actual: actual,
+        variance: Math.round(variance * 100) / 100,
+        pct: pct
+      });
+      
+      totalBudget += bi.budgetAmount;
+      totalActual += actual;
+    }
+    
+    // Add unmatched actual items
+    for (var k in actualMap) {
+      var am = actualMap[k];
+      comparisonItems.push({
+        gl: am.gl,
+        costCenter: am.costCenter,
+        description: am.costName || '',
+        budget: 0,
+        actual: am.amount,
+        variance: am.amount,
+        pct: 999
+      });
+      totalActual += am.amount;
+    }
+    
+    totalBudget = Math.round(totalBudget * 100) / 100;
+    totalActual = Math.round(totalActual * 100) / 100;
+    var overallVariance = Math.round((totalActual - totalBudget) * 100) / 100;
+    var overallPct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 10000) / 100 : (totalActual > 0 ? 999 : 0);
+    
+    return {
+      ok: true,
+      period: period,
+      budget: totalBudget,
+      actual: totalActual,
+      variance: overallVariance,
+      variancePct: overallPct,
+      items: comparisonItems
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Summary across all periods with budget data
+ */
+function getBudgetSummary() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty('budgetData');
+    if (!saved) return { ok: true, totalBudget: 0, totalActual: 0, variance: 0, variancePct: 0, periods: 0 };
+    
+    var allBudget = JSON.parse(saved);
+    var periods = Object.keys(allBudget).sort();
+    var totalBudget = 0;
+    var totalActual = 0;
+    
+    for (var p = 0; p < periods.length; p++) {
+      var period = periods[p];
+      var budgetItems = allBudget[period] || [];
+      for (var i = 0; i < budgetItems.length; i++) {
+        totalBudget += Number(budgetItems[i].budgetAmount) || 0;
+      }
+      
+      // Get actual for this period
+      var vsActual = getBudgetVsActual(period);
+      if (vsActual.ok) {
+        totalActual += vsActual.actual;
+      }
+    }
+    
+    totalBudget = Math.round(totalBudget * 100) / 100;
+    totalActual = Math.round(totalActual * 100) / 100;
+    var variance = Math.round((totalActual - totalBudget) * 100) / 100;
+    var variancePct = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 10000) / 100 : (totalActual > 0 ? 999 : 0);
+    
+    return {
+      ok: true,
+      totalBudget: totalBudget,
+      totalActual: totalActual,
+      variance: variance,
+      variancePct: variancePct,
+      periods: periods.length
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 // ================= DASHBOARD DATA =================
 function getDashboardData() {
   try {
@@ -253,6 +523,14 @@ function getDashboardData() {
     var totalAmt = 0;
     for (var ti = 0; ti < items.length; ti++) totalAmt += items[ti].amount;
     
+    // Include budget summary
+    var budgetSummary = getBudgetSummary();
+    var budgetData = budgetSummary.ok ? budgetSummary : null;
+    
+    // Get dashboard config
+    var dashConfig = getDashboardConfig();
+    var config = dashConfig.ok ? dashConfig.config : DASHBOARD_CONFIG_DEFAULTS;
+    
     var result = {
       ok: true,
       totalItems: totalItems,
@@ -276,7 +554,11 @@ function getDashboardData() {
       ioBreakdown: ioBreakdown,
       expiringSoon: expiringSoon,
       dataQuality: dataQuality,
-      healthScore: healthScore
+      healthScore: healthScore,
+      // === BUDGET SUMMARY ===
+      budgetSummary: budgetData,
+      // === DASHBOARD CONFIG ===
+      dashboardConfig: config
     };
     
     // Cache 5 min
