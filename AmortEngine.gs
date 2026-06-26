@@ -1,6 +1,25 @@
-// ================= AMORTIZATION ENGINE =================
+// ================= AMORTIZATION ENGINE (with caching) =================
+var _amortCache = {};
+var _amortCacheTime = {};
+var _AMORT_CACHE_TTL = 120 * 1000; // 120 seconds in-session
+
+function invalidateAmortCache() {
+  _amortCache = {};
+  _amortCacheTime = {};
+}
+
+function _amortCacheKey_(item, targetPeriod) {
+  return (item.docNo || '?') + '|' + (targetPeriod || '__ALL__');
+}
+
 function calculateAmortization_(item, targetPeriod) {
   try {
+    // Check module-level cache
+    var cacheKey = _amortCacheKey_(item, targetPeriod);
+    var now = Date.now();
+    if (_amortCache[cacheKey] !== undefined && (now - (_amortCacheTime[cacheKey] || 0)) < _AMORT_CACHE_TTL) {
+      return _amortCache[cacheKey];
+    }
     const start = new Date(item.startDate);
     const end = new Date(item.endDate);
     if (isNaN(start) || isNaN(end) || start > end) return [];
@@ -49,8 +68,9 @@ function calculateAmortization_(item, targetPeriod) {
         results.push({
           period: period, daysInMonth: daysInMonth, amortAmount: Math.round(amortAmount * 100) / 100,
           accumulated: accumulated, remaining: remaining,
-          docNo: item.docNo, description: item.description, io: item.io,
-          glPrepaid: item.glPrepaid, costCenter: item.costCenter, plate: item.plate
+          docNo: item.docNo, docNo2: item.docNo2 || '', description: item.description, io: item.io,
+          glPrepaid: item.glPrepaid, glName: item.glName || '',
+          costCenter: item.costCenter, costName: item.costName || '', plate: item.plate
         });
       }
 
@@ -58,6 +78,9 @@ function calculateAmortization_(item, targetPeriod) {
       if (targetPeriod && period === targetPeriod) break;
       current = new Date(year, month + 1, 1);
     }
+    // Cache the result
+    _amortCache[cacheKey] = results;
+    _amortCacheTime[cacheKey] = Date.now();
     return results;
   } catch (e) {
     Logger.log('calculateAmortization_ error for doc ' + (item && item.docNo || '?') + ': ' + e.message);
@@ -69,6 +92,54 @@ function calculateAmortization_(item, targetPeriod) {
 function runMonthEndAmortization(targetPeriod) {
   try {
     const items = readInputData_();
+
+    // Multi-period: if targetPeriod is an array, run for each period and combine
+    if (Array.isArray(targetPeriod)) {
+      const periodList = targetPeriod;
+      let allSchedules = [], totalAmortAmount = 0;
+      const perPeriodResults = [];
+
+      for (let p = 0; p < periodList.length; p++) {
+        const period = periodList[p];
+        let periodSchedules = [], periodAmount = 0, periodActive = 0;
+
+        for (let i = 0; i < items.length; i++) {
+          const schedule = calculateAmortization_(items[i], period);
+          if (schedule.length > 0) {
+            periodSchedules = periodSchedules.concat(schedule);
+            periodActive++;
+            for (let j = 0; j < schedule.length; j++) periodAmount += schedule[j].amortAmount;
+          }
+        }
+
+        perPeriodResults.push({
+          period: period,
+          activeItems: periodActive,
+          scheduleRows: periodSchedules.length,
+          totalAmount: Math.round(periodAmount * 100) / 100,
+          sample: periodSchedules.slice(0, 8)
+        });
+
+        allSchedules = allSchedules.concat(periodSchedules);
+        totalAmortAmount += periodAmount;
+      }
+
+      const totalActive = perPeriodResults.reduce(function(sum, r) { return sum + r.activeItems; }, 0);
+
+      return {
+        ok: true,
+        message: 'Multi-period (' + periodList.length + ' งวด): ' + allSchedules.length + ' บรรทัด — ยอดรวม ' + fmtMoney_(totalAmortAmount) + ' บาท',
+        totalItems: items.length,
+        activeItems: totalActive,
+        scheduleRows: allSchedules.length,
+        totalAmount: Math.round(totalAmortAmount * 100) / 100,
+        sample: allSchedules.slice(0, 15),
+        perPeriod: perPeriodResults,
+        isMultiPeriod: true
+      };
+    }
+
+    // Single-period (original behavior, backward compatible)
     let allSchedules = [], totalAmortAmount = 0, activeItems = 0;
 
     for (let i = 0; i < items.length; i++) {
@@ -86,7 +157,8 @@ function runMonthEndAmortization(targetPeriod) {
       totalItems: items.length, activeItems: activeItems,
       scheduleRows: allSchedules.length,
       totalAmount: Math.round(totalAmortAmount * 100) / 100,
-      sample: allSchedules.slice(0, 10)
+      sample: allSchedules.slice(0, 10),
+      isMultiPeriod: false
     };
   } catch (e) {
     return { ok: false, error: e.message };

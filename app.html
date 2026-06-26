@@ -17,6 +17,65 @@ function toast(msg,type){tost(msg,type)}
 function showResult(id, html){var el=document.getElementById(id);el.innerHTML=html;el.classList.add('show')}
 var chartInstances={};
 
+// ========== PAGINATION ==========
+// Reusable pagination state
+var _pagState = {
+  amort: { page: 0, pageSize: 50, total: 0 },
+  sap: { page: 0, pageSize: 50, total: 0 },
+  void: { page: 0, pageSize: 50, total: 0 },
+  checker: { page: 0, pageSize: 50, total: 0 }
+};
+
+function renderPagination(section, totalItems) {
+  var state = _pagState[section];
+  if (!state) return '';
+  state.total = totalItems || 0;
+  var totalPages = Math.max(1, Math.ceil(state.total / state.pageSize));
+  var page = Math.min(state.page, totalPages - 1);
+  state.page = page;
+  
+  var start = page * state.pageSize + 1;
+  var end = Math.min((page + 1) * state.pageSize, state.total);
+  var hasPrev = page > 0;
+  var hasNext = page < totalPages - 1;
+  
+  return '<div class="pagination" id="pag_' + section + '">' +
+    '<button class="btn btn-ghost btn-sm" onclick="pagPrev(\'' + section + '\')" ' + (!hasPrev ? 'disabled' : '') + '>◀</button>' +
+    '<span class="pag-info">หน้า ' + (page + 1) + ' จาก ' + totalPages + '</span>' +
+    '<button class="btn btn-ghost btn-sm" onclick="pagNext(\'' + section + '\')" ' + (!hasNext ? 'disabled' : '') + '>▶</button>' +
+    '<span class="pag-range">แสดง ' + start.toLocaleString() + '–' + end.toLocaleString() + ' จาก ' + state.total.toLocaleString() + ' รายการ</span>' +
+    '</div>';
+}
+
+function pagPrev(section) {
+  var state = _pagState[section];
+  if (!state || state.page <= 0) return;
+  state.page--;
+  pagRefresh(section);
+}
+
+function pagNext(section) {
+  var state = _pagState[section];
+  if (!state) return;
+  var totalPages = Math.ceil(state.total / state.pageSize);
+  if (state.page >= totalPages - 1) return;
+  state.page++;
+  pagRefresh(section);
+}
+
+function pagGoTo(section, page) {
+  var state = _pagState[section];
+  if (!state) return;
+  state.page = Math.max(0, Math.min(page, Math.ceil(state.total / state.pageSize) - 1));
+  pagRefresh(section);
+}
+
+function pagRefresh(section) {
+  // Dispatch a custom event that the section handlers can listen to
+  var evt = new CustomEvent('paginate', { detail: { section: section } });
+  document.dispatchEvent(evt);
+}
+
 // ========== NAVIGATION ==========
 function go(p){
   // Convert page name to section id: first letter uppercase
@@ -53,6 +112,8 @@ function go(p){
   if(p==='sync') loadSyncData();
   if(p==='admin') loadAdminConsole();
   if(p==='audit') loadAuditLog();
+  if(p==='periodclose') loadPeriodClose();
+  if(p==='approvals') loadApprovals();
 }
 // Backward compatibility: switchTab calls go()
 function switchTab(p){go(p);}
@@ -137,6 +198,8 @@ function loadDashboard(){
     renderCharts(r);
     // Phase A: drill-down dashboard
     setTimeout(function(){setupDashboardDrillDown(r);},50);
+    // B5: Load Running Balance data
+    setTimeout(function(){loadRunningBalance(r);},200);
   }).withFailureHandler(function(e){
     document.getElementById('dashSub').textContent='Error: '+e.message;
     document.getElementById('statusTxt').textContent='Error';
@@ -381,13 +444,14 @@ function renderCharts(r){
   if(r.expiringSoon && r.expiringSoon.length>0){
     expBody.innerHTML = r.expiringSoon.map(function(e){
       return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(e.docNo)+'</td>'+
-        '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">'+esc((e.description||'').substring(0,35))+'</td>'+
-        '<td>'+esc(e.endDate)+'</td>'+
-        '<td class="num">฿'+fmt(e.amount)+'</td>'+
-        '<td class="num">฿'+fmt(e.remaining)+'</td></tr>';
-    }).join('');
-  } else {
-    expBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">No data</td></tr>';
+   '<td style="font-family:JetBrains Mono,mono">'+esc(e.docNo2||'')+'</td>'+
+   '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">'+esc((e.description||'').substring(0,35))+'</td>'+
+   '<td>'+esc(e.endDate)+'</td>'+
+   '<td class="num">฿'+fmt(e.amount)+'</td>'+
+   '<td class="num">฿'+fmt(e.remaining)+'</td></tr>';
+ }).join('');
+ } else {
+ expBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mt)">No data</td></tr>';
   }
   
   // Data Quality (S-13)
@@ -412,9 +476,48 @@ function destroyCharts(){
 }
 
 // ========== RUN AMORTIZATION ==========
+function toggleMultiPeriod() {
+  var chk = document.getElementById('multiPeriodChk');
+  var range = document.getElementById('multiPeriodRange');
+  if (chk && range) {
+    range.style.display = chk.checked ? 'flex' : 'none';
+  }
+}
+
+function generatePeriodList_(start, end) {
+  // Generate array of YYYY-MM periods from start to end inclusive
+  var partsS = start.split('-'), partsE = end.split('-');
+  var sy = parseInt(partsS[0]), sm = parseInt(partsS[1]) - 1;
+  var ey = parseInt(partsE[0]), em = parseInt(partsE[1]) - 1;
+  var list = [];
+  var cur = new Date(sy, sm, 1);
+  var endDate = new Date(ey, em, 1);
+  while (cur <= endDate) {
+    var y = cur.getFullYear();
+    var m = cur.getMonth() + 1;
+    list.push(y + '-' + (m < 10 ? '0' : '') + m);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return list;
+}
+
 function runAmort(){
-  var period=document.getElementById('amortPeriod').value.trim();
-  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+  var multiChecked = document.getElementById('multiPeriodChk') && document.getElementById('multiPeriodChk').checked;
+  var periodArg = null;
+
+  if (multiChecked) {
+    var startVal = document.getElementById('mpStart').value.trim();
+    var endVal = document.getElementById('mpEnd').value.trim();
+    if (!startVal || !endVal) { toast('กรุณากรอกงวด開始 และ งวดสิ้นสุด','er'); return; }
+    if (!/^\d{4}-\d{2}$/.test(startVal) || !/^\d{4}-\d{2}$/.test(endVal)) { toast('รูปแบบ YYYY-MM','er'); return; }
+    if (startVal > endVal) { toast('งวดเริ่มต้นต้อง ≤ งวดสิ้นสุด','er'); return; }
+    periodArg = generatePeriodList_(startVal, endVal);
+  } else {
+    var period = document.getElementById('amortPeriod').value.trim();
+    if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('รูปแบบ YYYY-MM หรือว่าง','er');return}
+    periodArg = period || null;
+  }
+
   document.getElementById('loaderAmort').classList.remove('hidden');
   document.getElementById('resultAmort').classList.remove('show');
   google.script.run.withSuccessHandler(function(r){
@@ -426,11 +529,39 @@ function runAmort(){
         '<div class="kpi"><div class="kv">'+r.activeItems.toLocaleString()+'</div><div class="kl">Active Items</div></div>'+
         '<div class="kpi bl"><div class="kv">'+r.scheduleRows.toLocaleString()+'</div><div class="kl">Schedule Rows</div></div>'+
         '<div class="kpi gn"><div class="kv">฿'+fmt(r.totalAmount)+'</div><div class="kl">Total Amort</div></div></div>';
+
+      // Per-period breakdown for multi-period runs
+      if (r.isMultiPeriod && r.perPeriod && r.perPeriod.length > 0) {
+        html += '<div class="card" style="padding:12px;margin-top:8px"><h3 style="margin-bottom:8px">📊 Per-Period Results</h3>' +
+          '<table class="tb" style="font-size:11px"><thead><tr>' +
+          '<th>Period</th><th class="num">Active Items</th><th class="num">Schedule Rows</th><th class="num">Total Amount</th>' +
+          '</tr></thead><tbody>' +
+          r.perPeriod.map(function(pp){
+            return '<tr>' +
+              '<td style="font-family:JetBrains Mono,mono">'+esc(pp.period)+'</td>' +
+              '<td class="num">'+pp.activeItems.toLocaleString()+'</td>' +
+              '<td class="num">'+pp.scheduleRows.toLocaleString()+'</td>' +
+              '<td class="num">฿'+fmt(pp.totalAmount)+'</td></tr>';
+          }).join('') +
+          '</tbody></table></div>';
+      }
+
       if(r.sample&&r.sample.length>0){
-        html+='<div class="tw" style="max-height:300px;overflow-y:auto"><table class="tb"><thead><tr>'+
-          '<th>Doc</th><th>รายการ</th><th>Period</th><th>GL</th><th class="num">Amount</th><th class="num">Accum</th><th class="num">Remain</th>'+
-          '</tr></thead><tbody>'+r.sample.map(function(s){
+        // Pagination: slice sample based on page
+        var pagState = _pagState['amort'];
+        var sampleAll = r.sample;
+        var totalRows = r.scheduleRows || sampleAll.length;
+        pagState.total = totalRows;
+        var page = pagState.page;
+        var ps = pagState.pageSize;
+        var pagedSample = sampleAll.slice(page * ps, (page + 1) * ps);
+        
+        html+=renderPagination('amort', totalRows);
+        html+='<div class="tw" style="max-height:300px;overflow-y:auto"><table class="tb" id="amortPagTable"><thead><tr>'+
+          '<th>Doc</th><th>Doc No 2</th><th>รายการ</th><th>Period</th><th>GL</th><th class="num">Amount</th><th class="num">Accum</th><th class="num">Remain</th>'+
+          '</tr></thead><tbody>'+pagedSample.map(function(s){
             return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(s.docNo)+'</td>'+
+              '<td style="font-family:JetBrains Mono,mono">'+esc(s.docNo2||'')+'</td>'+
               '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc((s.description||'').substring(0,30))+'</td>'+
               '<td>'+esc(s.period)+'</td>'+
               '<td style="font-family:JetBrains Mono,mono">'+esc(s.glPrepaid||'')+'</td>'+
@@ -441,21 +572,22 @@ function runAmort(){
       }
       el.innerHTML=html;
       if(r.sample) populateSchedule(r.sample);
-      toast('✅ '+r.message,'ok');
+      toast('✅ '+(multiChecked?'Multi-period run complete':'Run complete'),'ok');
     }else{
       el.innerHTML='<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>';
     }
   }).withFailureHandler(function(e){
     document.getElementById('loaderAmort').classList.add('hidden');
     showResult('resultAmort','<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>');
-  }).runMonthEndAmortization(period||null);
+  }).runMonthEndAmortization(periodArg);
 }
 
 function populateSchedule(sample){
   var tb=document.getElementById('schedBody');
-  if(!sample||!sample.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--mt)">No data</td></tr>';return}
+  if(!sample||!sample.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:var(--mt)">No data</td></tr>';return}
   tb.innerHTML=sample.map(function(s){
     return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(s.docNo)+'</td>'+
+      '<td style="font-family:JetBrains Mono,mono">'+esc(s.docNo2||'')+'</td>'+
       '<td>'+esc((s.description||'').substring(0,25))+'</td>'+
       '<td>'+esc(s.period)+'</td>'+
       '<td>'+esc(s.io||'')+'</td>'+
@@ -530,6 +662,200 @@ function exportSAPJE(){
     document.getElementById('loaderSAP').classList.add('hidden');
     showResult('resultSAP','<div class="al al-er">'+e.message+'</div>');
   }).exportSAPJE(period||null);
+}
+
+// ========== BULK SAP JE EXPORT ==========
+var _bulkPeriods = [];
+
+function toggleBulkSAP() {
+  var el = document.getElementById('bulkSapSection');
+  var btn = document.getElementById('bulkSapToggle');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.innerHTML = '<i class="bi bi-dash-circle"></i> Hide Bulk Export';
+    loadBulkSAPPeriods();
+  } else {
+    el.style.display = 'none';
+    btn.innerHTML = '<i class="bi bi-plus-circle"></i> Bulk Export';
+  }
+}
+
+function loadBulkSAPPeriods() {
+  document.getElementById('loaderBulkSAP').classList.remove('hidden');
+  document.getElementById('bulkSapBody').innerHTML = '';
+  google.script.run.withSuccessHandler(function(periods){
+    document.getElementById('loaderBulkSAP').classList.add('hidden');
+    if (!periods || periods.length === 0) {
+      document.getElementById('bulkSapBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mt)">No periods available</td></tr>';
+      return;
+    }
+    _bulkPeriods = periods;
+    var html = '';
+    for (var i = 0; i < periods.length; i++) {
+      html += '<tr>' +
+        '<td style="text-align:center"><input type="checkbox" class="bulk-sap-cb" value="'+esc(periods[i])+'" onchange="onBulkSAPCheckChange()"></td>' +
+        '<td style="font-family:JetBrains Mono,mono">'+esc(periods[i])+'</td>' +
+        '<td class="num" id="bulkPreview_'+periods[i]+'">—</td>' +
+        '<td class="num" id="bulkPreviewDocs_'+periods[i]+'">—</td>' +
+        '<td class="num" id="bulkPreviewLines_'+periods[i]+'">—</td>' +
+        '<td class="num" id="bulkPreviewAmount_'+periods[i]+'">—</td>' +
+        '</tr>';
+    }
+    document.getElementById('bulkSapBody').innerHTML = html;
+    document.getElementById('bulkSapCount').textContent = periods.length+' periods';
+    toast('✅ โหลด '+periods.length+' งวด','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderBulkSAP').classList.add('hidden');
+    document.getElementById('bulkSapBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mt)">Error: '+e.message+'</td></tr>';
+    toast('❌ '+e.message,'er');
+  }).getAvailablePeriods();
+}
+
+function onBulkSAPSelectAll() {
+  var checked = document.getElementById('bulkSapSelectAll').checked;
+  document.querySelectorAll('.bulk-sap-cb').forEach(function(cb){cb.checked = checked;});
+  updateBulkSAPCount();
+}
+
+function onBulkSAPClearAll() {
+  document.querySelectorAll('.bulk-sap-cb').forEach(function(cb){cb.checked = false;});
+  document.getElementById('bulkSapSelectAll').checked = false;
+  updateBulkSAPCount();
+}
+
+function onBulkSAPCheckChange() {
+  updateBulkSAPCount();
+  var all = document.querySelectorAll('.bulk-sap-cb');
+  var allChecked = true;
+  all.forEach(function(cb){if(!cb.checked) allChecked = false;});
+  document.getElementById('bulkSapSelectAll').checked = allChecked;
+}
+
+function updateBulkSAPCount() {
+  var selected = document.querySelectorAll('.bulk-sap-cb:checked').length;
+  var el = document.getElementById('bulkSapSelectedCount');
+  if (selected > 0) {
+    el.textContent = '✅ เลือก '+selected+' งวด';
+    el.style.color = 'var(--gn)';
+  } else {
+    el.textContent = '0 งวด';
+    el.style.color = 'var(--mt)';
+  }
+}
+
+function getSelectedBulkSAPPeriods() {
+  var selected = [];
+  document.querySelectorAll('.bulk-sap-cb:checked').forEach(function(cb){
+    selected.push(cb.value);
+  });
+  return selected;
+}
+
+function previewBulkSAP() {
+  var selected = getSelectedBulkSAPPeriods();
+  if (selected.length === 0) { toast('กรุณาเลือกอย่างน้อย 1 งวด','er'); return; }
+  
+  // Show loader on each selected row
+  for (var i = 0; i < selected.length; i++) {
+    document.getElementById('bulkPreview_'+selected[i]).textContent = '⏳';
+    document.getElementById('bulkPreviewDocs_'+selected[i]).textContent = '';
+    document.getElementById('bulkPreviewLines_'+selected[i]).textContent = '';
+    document.getElementById('bulkPreviewAmount_'+selected[i]).textContent = '';
+  }
+  document.getElementById('resultBulkSAP').classList.remove('show');
+  
+  // Get preview for each period sequentially
+  var idx = 0;
+  function previewNext() {
+    if (idx >= selected.length) {
+      toast('✅ Preview complete','ok');
+      return;
+    }
+    var period = selected[idx];
+    google.script.run.withSuccessHandler(function(r){
+      var p = r.period || period;
+      if (r.ok) {
+        document.getElementById('bulkPreview_'+p).textContent = '✅';
+        document.getElementById('bulkPreviewDocs_'+p).textContent = r.totalDocs || 0;
+        document.getElementById('bulkPreviewLines_'+p).textContent = r.totalLines || 0;
+        document.getElementById('bulkPreviewAmount_'+p).textContent = '฿'+fmt(r.totalDebit);
+      } else {
+        document.getElementById('bulkPreview_'+p).textContent = '❌';
+        document.getElementById('bulkPreviewDocs_'+p).textContent = '—';
+        document.getElementById('bulkPreviewLines_'+p).textContent = '—';
+        document.getElementById('bulkPreviewAmount_'+p).textContent = r.error || 'Error';
+      }
+      idx++;
+      previewNext();
+    }).withFailureHandler(function(e){
+      document.getElementById('bulkPreview_'+period).textContent = '❌';
+      document.getElementById('bulkPreviewDocs_'+period).textContent = '—';
+      document.getElementById('bulkPreviewLines_'+period).textContent = '—';
+      document.getElementById('bulkPreviewAmount_'+period).textContent = e.message;
+      idx++;
+      previewNext();
+    }).getSAPJEPreview(period);
+  }
+  previewNext();
+}
+
+function exportBulkSAP() {
+  var selected = getSelectedBulkSAPPeriods();
+  if (selected.length === 0) { toast('กรุณาเลือกอย่างน้อย 1 งวด','er'); return; }
+  if (!confirm('สร้าง SAP JE สำหรับ '+selected.length+' งวด? (แต่ละงวดจะแยก Sheet)' +
+    '\n\nงวดที่เลือก:\n'+selected.join('\n'))) return;
+  
+  document.getElementById('loaderBulkSAPExec').classList.remove('hidden');
+  document.getElementById('resultBulkSAP').classList.remove('show');
+  document.getElementById('bulkSapResultCard').style.display = 'none';
+  
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderBulkSAPExec').classList.add('hidden');
+    if (!r.ok && r.succeeded === 0) {
+      showResult('resultBulkSAP','<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'All periods failed')+'</div>');
+      return;
+    }
+    
+    // Summary KPIs
+    var summaryHtml = '<div class="kpi-grid" style="margin-bottom:10px">' +
+      '<div class="kpi gn"><div class="kv">'+r.succeeded+' / '+r.perPeriod.length+'</div><div class="kl">สำเร็จ / ทั้งหมด</div></div>' +
+      '<div class="kpi'+(r.failed>0?' rd':'')+'"><div class="kv">'+r.failed+'</div><div class="kl">ล้มเหลว</div></div>' +
+      '<div class="kpi"><div class="kv">'+r.totalDocs+'</div><div class="kl">Total Documents</div></div>' +
+      '<div class="kpi bl"><div class="kv">'+r.totalLines.toLocaleString()+'</div><div class="kl">Total Lines</div></div>' +
+      '<div class="kpi gn"><div class="kv">฿'+fmt(r.totalDebit)+'</div><div class="kl">Dr = Cr</div></div>' +
+      '</div>' +
+      '<div class="al '+(r.failed>0?'al-er':'al-ok')+'"><i class="bi '+(r.failed>0?'bi-exclamation-triangle':'bi-check-circle')+'"></i> '+r.message+'</div>';
+    document.getElementById('bulkSapSummary').innerHTML = summaryHtml;
+    
+    // Per-period results table
+    var tb = document.getElementById('bulkSapResultsBody');
+    tb.innerHTML = r.perPeriod.map(function(res){
+      var statusIcon = res.ok ? '✅' : '❌';
+      var statusText = res.ok ? 'สำเร็จ' : 'ล้มเหลว';
+      var linksHtml = '';
+      if (res.ok && res.sheetUrl) {
+        linksHtml = '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
+          '<a href="'+res.sheetUrl+'" target="_blank" class="btn btn-ghost btn-sm" style="font-size:9px;padding:2px 6px"><i class="bi bi-file-spreadsheet"></i> Sheet</a>' +
+          (res.xlsxUrl ? '<a href="'+res.xlsxUrl+'" target="_blank" class="btn btn-ghost btn-sm" style="font-size:9px;padding:2px 6px"><i class="bi bi-download"></i> .xlsx</a>' : '') +
+          '</div>';
+      }
+      return '<tr>' +
+        '<td style="font-family:JetBrains Mono,mono">'+esc(res.period)+'</td>' +
+        '<td>'+statusIcon+' '+statusText+'</td>' +
+        '<td class="num">'+res.docs+'</td>' +
+        '<td class="num">'+res.lines.toLocaleString()+'</td>' +
+        '<td class="num">฿'+fmt(res.debit)+'</td>' +
+        '<td>'+(linksHtml || (res.error ? esc(res.error).substring(0,40) : '—'))+'</td>' +
+        '</tr>';
+    }).join('');
+    document.getElementById('bulkSapResultCard').style.display = 'block';
+    showResult('resultBulkSAP','<div class="al '+(r.failed>0?'al-er':'al-ok')+'"><i class="bi '+(r.failed>0?'bi-exclamation-triangle':'bi-check-circle')+'"></i> Bulk Export: '+r.succeeded+' สำเร็จ, '+r.failed+' ล้มเหลว</div>');
+    toast('✅ Bulk Export: '+r.succeeded+' สำเร็จ'+(r.failed>0?', '+r.failed+' ล้มเหลว':''), r.failed>0?'er':'ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderBulkSAPExec').classList.add('hidden');
+    showResult('resultBulkSAP','<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>');
+    toast('❌ '+e.message,'er');
+  }).bulkExportSAPJE(selected);
 }
 
 // ========== WIDE FORMAT ==========
@@ -726,6 +1052,13 @@ function loadVoidDocs(){
     sel.innerHTML='<option value="">— เลือกเลขที่ DOC —</option>'+r.list.map(function(d){
       return '<option value="'+esc(d.docNo)+'">'+esc(d.docNo)+' — '+esc((d.description||'').substring(0,40))+'</option>';
     }).join('');
+    // Also populate the modify dropdown
+    var modSel=document.getElementById('modifyDocNo');
+    if(modSel){
+      modSel.innerHTML='<option value="">— เลือกเลขที่ DOC —</option>'+r.list.map(function(d){
+        return '<option value="'+esc(d.docNo)+'">'+esc(d.docNo)+' — '+esc((d.description||'').substring(0,40))+'</option>';
+      }).join('');
+    }
   }).getDocList();
 }
 function onVoidDocSelect(){
@@ -740,6 +1073,7 @@ function onVoidDocSelect(){
     document.getElementById('resultVoid').classList.remove('show');
     if(!r.ok){toast('❌ '+r.error,'er');return}
     document.getElementById('vDocNo').textContent=r.docNo;
+    document.getElementById('vDocNo2').textContent=r.docNo2||'—';
     document.getElementById('vAmount').textContent=fmt(r.amount);
     document.getElementById('vAmortized').textContent=fmt(r.amortized);
     document.getElementById('vRemaining').textContent=fmt(r.remaining);
@@ -747,6 +1081,8 @@ function onVoidDocSelect(){
     document.getElementById('vPlate').textContent=r.plate||'—';
     document.getElementById('vIo').textContent=r.io||'—';
     document.getElementById('vGl').textContent=r.glPrepaid||'—';
+    document.getElementById('vGlName').textContent=r.glName||'—';
+    document.getElementById('vCostName').textContent=r.costName||'—';
     document.getElementById('voidDocInfo').classList.remove('hidden');
     document.getElementById('voidFormCard').style.display='block';
     var today=new Date().toISOString().slice(0,10);
@@ -813,6 +1149,309 @@ function voidExecute(){
   }).voidPrepaid({docNo:docNo, voidDate:voidDate, type:type, lossGL:lossGL});
 }
 
+// ========== BATCH VOID ==========
+var _batchVoidDocs = [];
+
+function onBatchVoidTypeChange(){
+  var type=document.getElementById('batchVoidType').value;
+  document.getElementById('batchVoidLossGlRow').classList.toggle('hidden',type!=='loss');
+}
+
+function loadBatchVoidDocs(){
+  document.getElementById('loaderBatchVoid').classList.remove('hidden');
+  document.getElementById('batchVoidBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--mt)">⏳ กำลังโหลด...</td></tr>';
+  document.getElementById('batchVoidResultCard').style.display='none';
+  document.getElementById('resultBatchVoid').classList.remove('show');
+  // Pagination
+  var pagState = _pagState['void'];
+  var skip = pagState.page * pagState.pageSize;
+  var limit = pagState.pageSize;
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderBatchVoid').classList.add('hidden');
+    if(!r.ok||!r.list){document.getElementById('batchVoidBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--mt)">ไม่สามารถโหลดรายการ: '+(r.error||'')+'</td></tr>';return}
+    _batchVoidDocs=r.list;
+    var tb=document.getElementById('batchVoidBody');
+    if(r.list.length===0){
+      tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--mt)">ไม่มีเอกสาร</td></tr>';
+      document.getElementById('batchVoidCount').textContent='0 รายการ';
+      return;
+    }
+    // Add pagination bar
+    var pagHtml = renderPagination('void', r.total || r.list.length);
+    document.getElementById('batchVoidPagWrap').innerHTML = pagHtml;
+    tb.innerHTML=r.list.map(function(d,i){
+      return '<tr>'+
+        '<td style="text-align:center"><input type="checkbox" class="batch-void-cb" value="'+esc(d.docNo)+'" onchange="onBatchVoidCheckChange()"></td>'+
+        '<td style="font-family:JetBrains Mono,mono">'+esc(d.docNo)+'</td>'+
+        '<td style="font-family:JetBrains Mono,mono">'+esc(d.docNo2||'')+'</td>'+
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc((d.description||'').substring(0,40))+'</td>'+
+        '<td>'+esc(d.plate||'')+'</td>'+
+        '<td class="num">—</td>'+
+        '</tr>';
+    }).join('');
+    document.getElementById('batchVoidCount').textContent=r.list.length+' รายการ';
+    document.getElementById('batchVoidSelectAll').checked=false;
+    // Set default date
+    var today=new Date().toISOString().slice(0,10);
+    document.getElementById('batchVoidDate').value=today;
+    toast('✅ โหลด '+r.list.length+' รายการ','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderBatchVoid').classList.add('hidden');
+    document.getElementById('batchVoidBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--mt)">Error: '+e.message+'</td></tr>';
+  }).getDocList(skip, limit);
+}
+
+function onBatchVoidSelectAll(){
+  var checked=document.getElementById('batchVoidSelectAll').checked;
+  document.querySelectorAll('.batch-void-cb').forEach(function(cb){cb.checked=checked;});
+  updateBatchVoidCount();
+}
+
+function onBatchVoidCheckChange(){
+  updateBatchVoidCount();
+  // Uncheck select-all if any unchecked
+  var all=document.querySelectorAll('.batch-void-cb');
+  var allChecked=true;
+  all.forEach(function(cb){if(!cb.checked)allChecked=false;});
+  document.getElementById('batchVoidSelectAll').checked=allChecked;
+}
+
+function updateBatchVoidCount(){
+  var selected=document.querySelectorAll('.batch-void-cb:checked').length;
+  var el=document.getElementById('batchVoidCount');
+  if(selected>0){
+    el.textContent='✅ เลือก '+selected+' รายการ';
+    el.style.color='var(--gn)';
+  }else{
+    el.textContent=document.querySelectorAll('.batch-void-cb').length+' รายการ';
+    el.style.color='var(--mt)';
+  }
+}
+
+function getSelectedBatchVoidDocs(){
+  var selected=[];
+  document.querySelectorAll('.batch-void-cb:checked').forEach(function(cb){
+    selected.push(cb.value);
+  });
+  return selected;
+}
+
+function batchVoidPreview(){
+  var selected=getSelectedBatchVoidDocs();
+  if(selected.length===0){toast('กรุณาเลือกเอกสารอย่างน้อย 1 รายการ','er');return}
+  var type=document.getElementById('batchVoidType').value;
+  var voidDate=document.getElementById('batchVoidDate').value;
+  var lossGL=document.getElementById('batchVoidLossGL').value.trim()||'51990010';
+  document.getElementById('resultBatchVoid').classList.remove('show');
+  document.getElementById('batchVoidResultCard').style.display='none';
+
+  var typeLabel=type==='refund'?'💰 REFUND (คืนเงิน)':'📉 LOSS (ตัดสูญ)';
+  var html='<div class="al al-ok"><i class="bi bi-check-circle"></i> <strong>'+typeLabel+'</strong><br>'+
+    'เอกสารที่จะดำเนินการ: <strong>'+selected.length+'</strong> รายการ'+
+    '<br>วันที่: '+(voidDate||'—')+
+    (type==='loss'?'<br>Loss GL: '+esc(lossGL):'')+
+    '</div>';
+  showResult('resultBatchVoid',html);
+  toast('✅ ตรวจสอบ '+selected.length+' รายการ พร้อม Execute','ok');
+}
+
+function batchVoidExecute(){
+  var selected=getSelectedBatchVoidDocs();
+  if(selected.length===0){toast('กรุณาเลือกเอกสารอย่างน้อย 1 รายการ','er');return}
+  var type=document.getElementById('batchVoidType').value;
+  var voidDate=document.getElementById('batchVoidDate').value;
+  var lossGL=document.getElementById('batchVoidLossGL').value.trim()||'51990010';
+
+  if(!confirm('⚠️ ยืนยัน Batch Void จำนวน '+selected.length+' เอกสาร แบบ '+(type==='refund'?'REFUND':'LOSS')+'?\n\n'+
+    'รายการที่จะดำเนินการ:\n'+selected.join('\n')+
+    '\n\nวันที่: '+(voidDate||'วันนี้')+
+    (type==='loss'?'\nLoss GL: '+lossGL:'')+
+    '\n\nดำเนินการต่อ?'))return;
+
+  document.getElementById('loaderBatchVoidExec').classList.remove('hidden');
+  document.getElementById('resultBatchVoid').classList.remove('show');
+  document.getElementById('batchVoidResultCard').style.display='none';
+
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderBatchVoidExec').classList.add('hidden');
+    if(!r.ok){
+      showResult('resultBatchVoid','<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>');
+      return;
+    }
+    // Summary
+    var summaryHtml='<div class="kpi-grid">'+
+      '<div class="kpi gn"><div class="kv">'+r.succeeded+' / '+r.total+'</div><div class="kl">สำเร็จ / ทั้งหมด</div></div>'+
+      '<div class="kpi'+(r.failed>0?' rd':'')+'"><div class="kv">'+r.failed+'</div><div class="kl">ล้มเหลว</div></div>'+
+      '</div>'+
+      '<div class="al '+(r.failed>0?'al-er':'al-ok')+'"><i class="bi '+(r.failed>0?'bi-exclamation-triangle':'bi-check-circle')+'"></i> '+r.message+'</div>';
+    document.getElementById('batchVoidSummary').innerHTML=summaryHtml;
+
+    // Results table
+    var tb=document.getElementById('batchVoidResultsBody');
+    tb.innerHTML=r.results.map(function(res,i){
+      var statusIcon=res.ok?'✅':'❌';
+      var statusText=res.ok?'สำเร็จ':'ล้มเหลว';
+      var detail=res.ok?esc(res.message||''):esc(res.error||'');
+      var amount=res.ok?fmt(res.amount):'—';
+      var jeRef=res.ok?esc(res.jeRef||''):'—';
+      return '<tr>'+
+        '<td>'+(i+1)+'</td>'+
+        '<td style="font-family:JetBrains Mono,mono">'+esc(res.docNo)+'</td>'+
+        '<td>'+statusIcon+' '+statusText+'</td>'+
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+detail+'</td>'+
+        '<td class="num">'+amount+'</td>'+
+        '<td style="font-family:JetBrains Mono,mono;font-size:10px">'+jeRef+'</td>'+
+        '</tr>';
+    }).join('');
+
+    document.getElementById('batchVoidResultCard').style.display='block';
+    showResult('resultBatchVoid','<div class="al al-ok"><i class="bi bi-check-circle"></i> Batch Void เสร็จสิ้น: '+r.succeeded+' สำเร็จ, '+r.failed+' ล้มเหลว</div>');
+    toast('✅ Batch Void: '+r.succeeded+' สำเร็จ, '+r.failed+' ล้มเหลว',r.failed>0?'er':'ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderBatchVoidExec').classList.add('hidden');
+    showResult('resultBatchVoid','<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>');
+  }).batchVoidPrepaid(selected, voidDate, type, lossGL);
+}
+
+// ========== VOID MODE SWITCHING ==========
+var _currentVoidMode = 'void';
+
+function setVoidMode(mode) {
+  _currentVoidMode = mode;
+  // Update button styles
+  ['void','batch','modify'].forEach(function(m){
+    var btn = document.getElementById('voidMode' + m.charAt(0).toUpperCase() + m.slice(1));
+    if(btn) btn.className = 'btn ' + (m === mode ? 'btn-pri' : 'btn-ghost');
+  });
+  // Show/hide content sections
+  var voidContent = document.getElementById('voidModeContent');
+  var batchContent = document.getElementById('batchVoidModeContent');
+  var modifyContent = document.getElementById('modifyModeContent');
+  if(voidContent) voidContent.style.display = mode === 'void' ? 'block' : 'none';
+  if(batchContent) batchContent.style.display = mode === 'batch' ? 'block' : 'none';
+  if(modifyContent) modifyContent.style.display = mode === 'modify' ? 'block' : 'none';
+}
+
+// ========== MODIFY MODE ==========
+function onModifyDocSelect() {
+  var docNo = document.getElementById('modifyDocNo').value;
+  if(!docNo){
+    document.getElementById('modifyDocInfo').classList.add('hidden');
+    document.getElementById('modifyFormCard').style.display = 'none';
+    document.getElementById('modifyComparison').style.display = 'none';
+    document.getElementById('modifyCompareResult').classList.remove('show');
+    return;
+  }
+  document.getElementById('loaderModifyDoc').classList.remove('hidden');
+  document.getElementById('modifyDocInfo').classList.add('hidden');
+  document.getElementById('modifyFormCard').style.display = 'none';
+  document.getElementById('modifyComparison').style.display = 'none';
+  document.getElementById('modifyCompareResult').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderModifyDoc').classList.add('hidden');
+    if(!r.ok){toast('❌ '+r.error,'er');return}
+    document.getElementById('modVDocNo').textContent = r.docNo;
+    document.getElementById('modVDesc').textContent = r.description||'—';
+    document.getElementById('modVIo').textContent = r.io||'—';
+    document.getElementById('modVGl').textContent = r.glPrepaid||'—';
+    // Populate editable fields with current values
+    document.getElementById('modStartDate').value = r.startDate;
+    document.getElementById('modEndDate').value = r.endDate;
+    document.getElementById('modAmount').value = r.amount;
+    document.getElementById('modifyDocInfo').classList.remove('hidden');
+    document.getElementById('modifyFormCard').style.display = 'block';
+    window._modifyComparison = null;
+  }).getDocDetail(docNo);
+}
+
+function calculateNewSchedule() {
+  var docNo = document.getElementById('modifyDocNo').value;
+  if(!docNo){toast('กรุณาเลือกเอกสาร','er');return}
+  var updates = {
+    startDate: document.getElementById('modStartDate').value,
+    endDate: document.getElementById('modEndDate').value,
+    amount: parseFloat(document.getElementById('modAmount').value) || 0
+  };
+  if(!updates.startDate||!updates.endDate){toast('กรุณากรอกวันที่เริ่มต้นและสิ้นสุด','er');return}
+  if(updates.amount<=0){toast('จำนวนเงินต้องมากกว่า 0','er');return}
+  if(updates.startDate>updates.endDate){toast('วันที่เริ่มต้นต้อง ≤ วันที่สิ้นสุด','er');return}
+  document.getElementById('loaderModifyCalc').classList.remove('hidden');
+  document.getElementById('modifyComparison').style.display = 'none';
+  document.getElementById('modifyCompareResult').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderModifyCalc').classList.add('hidden');
+    if(!r.ok){toast('❌ '+r.error,'er');return}
+    window._modifyComparison = r;
+    renderModifyComparison(r.old, r.modified);
+    document.getElementById('modifyComparison').style.display = 'block';
+    toast('✅ คำนวณตารางใหม่เสร็จสิ้น — ตรวจสอบแล้วกด Save','ok');
+  }).getModifyPreview(docNo, updates);
+}
+
+function renderModifyComparison(oldData, newData) {
+  // Summary KPIs
+  document.getElementById('modCompareOldAmount').textContent = fmt(oldData.amount);
+  document.getElementById('modCompareNewAmount').textContent = fmt(newData.amount);
+  document.getElementById('modCompareOldStart').textContent = oldData.startDate;
+  document.getElementById('modCompareNewStart').textContent = newData.startDate;
+  document.getElementById('modCompareOldEnd').textContent = oldData.endDate;
+  document.getElementById('modCompareNewEnd').textContent = newData.endDate;
+  document.getElementById('modCompareOldRows').textContent = oldData.scheduleRows;
+  document.getElementById('modCompareNewRows').textContent = newData.scheduleRows;
+  document.getElementById('modCompareOldRemaining').textContent = fmt(oldData.lastRemaining);
+  document.getElementById('modCompareNewRemaining').textContent = fmt(newData.lastRemaining);
+  // Old schedule table
+  var oldBody = document.getElementById('modOldScheduleBody');
+  if(oldData.schedule&&oldData.schedule.length>0){
+    oldBody.innerHTML = oldData.schedule.map(function(s){
+      return '<tr><td>'+esc(s.period)+'</td><td class="num">'+s.daysInMonth+'</td><td class="num">฿'+fmt(s.amortAmount)+'</td><td class="num">฿'+fmt(s.accumulated)+'</td><td class="num">฿'+fmt(s.remaining)+'</td></tr>';
+    }).join('');
+  } else {
+    oldBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">No schedule data</td></tr>';
+  }
+  // New schedule table
+  var newBody = document.getElementById('modNewScheduleBody');
+  if(newData.schedule&&newData.schedule.length>0){
+    newBody.innerHTML = newData.schedule.map(function(s){
+      return '<tr><td>'+esc(s.period)+'</td><td class="num">'+s.daysInMonth+'</td><td class="num">฿'+fmt(s.amortAmount)+'</td><td class="num">฿'+fmt(s.accumulated)+'</td><td class="num">฿'+fmt(s.remaining)+'</td></tr>';
+    }).join('');
+  } else {
+    newBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">No schedule data</td></tr>';
+  }
+  document.getElementById('modifyCompareResult').classList.add('show');
+}
+
+function saveModifiedRecord() {
+  var docNo = document.getElementById('modifyDocNo').value;
+  if(!docNo){toast('กรุณาเลือกเอกสาร','er');return}
+  if(!window._modifyComparison){toast('กรุณากด Calculate เพื่อตรวจสอบก่อน Save','er');return}
+  var updates = {
+    startDate: document.getElementById('modStartDate').value,
+    endDate: document.getElementById('modEndDate').value,
+    amount: parseFloat(document.getElementById('modAmount').value) || 0
+  };
+  if(!confirm('⚠️ ยืนยันการแก้ไขเอกสาร '+docNo+'?\n\n'+
+    'วันที่เริ่มต้น: '+updates.startDate+'\n'+
+    'วันที่สิ้นสุด: '+updates.endDate+'\n'+
+    'จำนวนเงิน: '+fmt(updates.amount)+'\n\n'+
+    'ข้อมูลในระบบจะถูกอัปเดต และต้อง Run Amortization ใหม่เพื่อให้ตารางตัดจ่ายสะท้อนการเปลี่ยนแปลง\n\nดำเนินการต่อ?')) return;
+  document.getElementById('loaderModifySave').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderModifySave').classList.add('hidden');
+    if(!r.ok){toast('❌ '+r.error,'er');return}
+    toast('✅ '+r.message,'ok');
+    // Reset the form
+    document.getElementById('modifyFormCard').style.display = 'none';
+    document.getElementById('modifyComparison').style.display = 'none';
+    document.getElementById('modifyCompareResult').classList.remove('show');
+    document.getElementById('modifyDocNo').value = '';
+    window._modifyComparison = null;
+    // Reload the doc lists
+    loadVoidDocs();
+    toast('💡 อย่าลืม Run Amortization (ที่หน้า Amortization) เพื่อคำนวณตารางใหม่ตามข้อมูลที่แก้ไข','');
+  }).updatePrepaidRecord(docNo, updates);
+}
+
 // ========== SYNC DATA ==========
 function loadSyncData(){
   google.script.run.withSuccessHandler(function(r){
@@ -854,6 +1493,8 @@ function loadAdminConsole(){
   }).withFailureHandler(function(e){
     document.getElementById('adminVersion').textContent='Error';
   }).getSystemInfo();
+  loadTriggerStatus();
+  loadEmailConfig();
 }
 function clearCache(){
   document.getElementById('loaderCache').classList.remove('hidden');
@@ -866,6 +1507,130 @@ function clearCache(){
     document.getElementById('loaderCache').classList.add('hidden');
     toast('❌ '+e.message,'er');
   }).clearCache();
+}
+
+// ========== MONTHLY TRIGGER ==========
+function loadTriggerStatus(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok){return}
+    var statusEl = document.getElementById('triggerStatusText');
+    var nextEl = document.getElementById('triggerNextRun');
+    var btn = document.getElementById('triggerToggleBtn');
+    if(r.installed){
+      statusEl.textContent = '✅ Installed';
+      statusEl.style.color = 'var(--gn)';
+      var d = r.nextRun ? new Date(r.nextRun) : null;
+      nextEl.textContent = d ? d.toLocaleString('th-TH') : '—';
+      btn.innerHTML = '<i class="bi bi-stop-circle"></i> Remove Trigger';
+      btn.className = 'btn btn-rd';
+    } else {
+      statusEl.textContent = '⏹️ Not installed';
+      statusEl.style.color = 'var(--mt)';
+      nextEl.textContent = '—';
+      btn.innerHTML = '<i class="bi bi-play-circle"></i> Install Trigger';
+      btn.className = 'btn btn-pri';
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('triggerStatusText').textContent = 'Error';
+  }).getTriggerStatus();
+}
+
+function toggleTrigger(){
+  var btn = document.getElementById('triggerToggleBtn');
+  var loader = document.getElementById('loaderTrigger');
+  var resultEl = document.getElementById('resultTrigger');
+  loader.classList.remove('hidden');
+  resultEl.classList.remove('show');
+  btn.disabled = true;
+  var isInstalling = btn.textContent.indexOf('Install') !== -1;
+  var actionFn = isInstalling ? 'installMonthlyTrigger' : 'removeMonthlyTrigger';
+  google.script.run.withSuccessHandler(function(r){
+    loader.classList.add('hidden');
+    btn.disabled = false;
+    resultEl.classList.add('show');
+    if(r.ok){
+      resultEl.innerHTML = '<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>';
+      loadTriggerStatus();
+      toast('✅ '+r.message,'ok');
+    } else {
+      resultEl.innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>';
+    }
+  }).withFailureHandler(function(e){
+    loader.classList.add('hidden');
+    btn.disabled = false;
+    resultEl.classList.add('show');
+    resultEl.innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>';
+    toast('❌ '+e.message,'er');
+  })[actionFn]();
+}
+
+// ========== EMAIL NOTIFICATIONS ==========
+function loadEmailConfig(){
+  google.script.run.withSuccessHandler(function(r){
+    if(!r.ok) return;
+    document.getElementById('emailRecipients').value = r.config.recipients || '';
+    document.getElementById('emailSendOnAutoRun').checked = r.config.sendOnAutoRun || false;
+    document.getElementById('emailSendWeeklyAlerts').checked = r.config.sendWeeklyAlerts || false;
+  }).withFailureHandler(function(e){
+    // silent
+  }).getEmailConfig();
+}
+
+function saveEmailConfig(){
+  var config = {
+    recipients: document.getElementById('emailRecipients').value.trim(),
+    sendOnAutoRun: document.getElementById('emailSendOnAutoRun').checked,
+    sendWeeklyAlerts: document.getElementById('emailSendWeeklyAlerts').checked,
+    dashboardUrl: ''
+  };
+  if (!config.recipients) { toast('❌ กรุณากรอกอีเมลผู้รับ','er'); return; }
+  google.script.run.withSuccessHandler(function(r){
+    if(r.ok){ toast('✅ Email config saved','ok'); }else{ toast('❌ '+r.error,'er'); }
+  }).saveEmailConfig(config);
+}
+
+function sendTestEmail(){
+  document.getElementById('loaderEmail').classList.remove('hidden');
+  document.getElementById('resultEmail').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderEmail').classList.add('hidden');
+    document.getElementById('resultEmail').classList.add('show');
+    if(r.ok){
+      document.getElementById('resultEmail').innerHTML = '<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>';
+      toast('✅ Test email sent!','ok');
+    } else {
+      document.getElementById('resultEmail').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>';
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderEmail').classList.add('hidden');
+    document.getElementById('resultEmail').classList.add('show');
+    document.getElementById('resultEmail').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>';
+    toast('❌ '+e.message,'er');
+  }).sendTestEmail();
+}
+
+function sendAmortReport(){
+  var period = prompt('Enter period (YYYY-MM) or leave empty for current period:');
+  if (period === null) return;
+  period = period.trim();
+  if (period && !/^\d{4}-\d{2}$/.test(period)){ toast('❌ Invalid period format (YYYY-MM)','er'); return; }
+  document.getElementById('loaderEmail').classList.remove('hidden');
+  document.getElementById('resultEmail').classList.remove('show');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderEmail').classList.add('hidden');
+    document.getElementById('resultEmail').classList.add('show');
+    if(r.ok){
+      document.getElementById('resultEmail').innerHTML = '<div class="al al-ok"><i class="bi bi-check-circle"></i> '+r.message+'</div>';
+      toast('✅ Report sent!','ok');
+    } else {
+      document.getElementById('resultEmail').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+(r.error||'Error')+'</div>';
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderEmail').classList.add('hidden');
+    document.getElementById('resultEmail').classList.add('show');
+    document.getElementById('resultEmail').innerHTML = '<div class="al al-er"><i class="bi bi-x-circle"></i> '+e.message+'</div>';
+    toast('❌ '+e.message,'er');
+  }).sendAmortReport(period || null);
 }
 
 // ========== AUDIT LOG ==========
@@ -903,6 +1668,272 @@ function logAction(action, detail){
   setTimeout(phaseAInit,100);
 })();
 // ========== PHASE A FEATURES ==========
+
+// ========== A3: GLOBAL SEARCH + COLUMN FILTER ==========
+(function(){
+  var ss=document.createElement('style');
+  ss.textContent='#globalSearchBar{position:sticky;top:0;z-index:50;background:var(--bg);padding:0 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--bdr);margin-bottom:16px}.search-wrap{position:relative;flex:1;min-width:140px}#globalSearchInput{width:100%;padding:7px 10px 7px 28px;background:var(--sf);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;font-family:Prompt,sans-serif;outline:none;transition:border-color .12s}#globalSearchInput:focus{border-color:var(--gold)}#globalSearchInput::placeholder{color:var(--mt);font-size:11px}.search-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--mt);font-size:11px;pointer-events:none}.filter-count-badge{font-size:10px;color:var(--mt);white-space:nowrap;padding:3px 8px;background:var(--card2);border:1px solid var(--bdr);border-radius:4px;font-family:JetBrains Mono,monospace;display:none}.filter-count-badge.show{display:inline-block}.clear-filters-btn{padding:4px 8px;font-size:10px;border:1px solid var(--bdr);border-radius:4px;background:transparent;color:var(--mt);cursor:pointer;font-family:Prompt,sans-serif;display:none;align-items:center;gap:3px;transition:all .12s}.clear-filters-btn:hover{color:var(--rd);border-color:var(--rd)}.clear-filters-btn.show{display:inline-flex}.tb th{position:relative;user-select:none}.col-filter-icon{display:none;position:absolute;right:2px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:3px;cursor:pointer;font-size:8px;color:var(--mt);align-items:center;justify-content:center;background:var(--card2);border:1px solid var(--bdr);transition:all .1s;z-index:2;line-height:1}.tb th:hover .col-filter-icon{display:flex}.col-filter-icon:hover{color:var(--gold);border-color:var(--gold)}.col-filter-icon.active{display:flex;color:var(--gold);border-color:var(--gold);background:rgba(201,169,110,.1)}.col-filter-dropdown{position:absolute;top:100%;left:0;z-index:100;background:var(--sf);border:1px solid var(--bdr);border-radius:5px;box-shadow:0 6px 24px rgba(0,0,0,.35);min-width:150px;max-height:250px;overflow-y:auto;padding:3px 0;display:none}.col-filter-dropdown.show{display:block}.col-filter-dropdown .fopt{padding:5px 10px;font-size:10px;cursor:pointer;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .08s}.col-filter-dropdown .fopt:hover{background:rgba(255,255,255,.04)}.col-filter-dropdown .fopt.sel{background:rgba(201,169,110,.1);color:var(--gold)}.col-filter-dropdown .fopt-all{border-bottom:1px solid var(--bdr);color:var(--mt);font-weight:500}.col-filter-dropdown .fopt-all:hover{color:var(--tx)}.cf-highlight{background:rgba(201,169,110,.25);color:var(--gold);padding:0 1px;border-radius:1px}';
+  document.head.appendChild(ss);
+})();
+
+var _searchQ='';
+var _colF={};   // {tableId:{colIdx:value}}
+var _srchTimer=null;
+
+function initA3(){
+  var ct=document.getElementById('ct');
+  if(!ct)return;
+  // Build search bar
+  var sb=document.createElement('div');
+  sb.id='globalSearchBar';
+  var sw=document.createElement('div');
+  sw.className='search-wrap';
+  sw.innerHTML='<span class="search-icon">🔍</span>';
+  var inp=document.createElement('input');
+  inp.id='globalSearchInput';
+  inp.type='text';
+  inp.placeholder='ค้นหา Doc No, รายการ, IO, GL...';
+  inp.autocomplete='off';
+  sw.appendChild(inp);
+  sb.appendChild(sw);
+  var badge=document.createElement('span');
+  badge.id='filterCountBadge';
+  badge.className='filter-count-badge';
+  sb.appendChild(badge);
+  var clr=document.createElement('button');
+  clr.id='clearFiltersBtn';
+  clr.className='clear-filters-btn';
+  clr.innerHTML='✕ Clear filters';
+  clr.onclick=clearAllFiltersA3;
+  sb.appendChild(clr);
+  ct.insertBefore(sb,ct.firstChild);
+  // Debounced search
+  inp.addEventListener('input',function(){
+    clearTimeout(_srchTimer);
+    var v=this.value;
+    _srchTimer=setTimeout(function(){_searchQ=v.trim();applyA3Filters();},300);
+  });
+  // MutationObserver picks up dynamically loaded tables
+  var obs=new MutationObserver(function(){addFilterIconsA3();if(_searchQ||Object.keys(_colF).length>0)applyA3Filters();});
+  obs.observe(ct,{childList:true,subtree:true});
+  // Initial run after a beat
+  setTimeout(function(){addFilterIconsA3();applyA3Filters();},300);
+}
+
+function addFilterIconsA3(){
+  document.querySelectorAll('.tb thead tr').forEach(function(tr){
+    Array.from(tr.children).forEach(function(th,idx){
+      if(th.querySelector('.col-filter-icon'))return;
+      if(getComputedStyle(th).position==='static')th.style.position='relative';
+      var ic=document.createElement('span');
+      ic.className='col-filter-icon';
+      ic.textContent='▾';
+      ic.addEventListener('click',function(e){
+        e.stopPropagation();e.preventDefault();toggleColFilterA3(th,idx);
+      });
+      th.appendChild(ic);
+    });
+  });
+}
+
+function toggleColFilterA3(th,idx){
+  // Close sibling dropdowns
+  document.querySelectorAll('.col-filter-dropdown.show').forEach(function(d){
+    if(d.closest('th')!==th)d.classList.remove('show');
+  });
+  var dd=th.querySelector('.col-filter-dropdown');
+  if(dd){dd.classList.toggle('show');return;}
+  var table=th.closest('.tb');
+  if(!table)return;
+  var tbody=table.querySelector('tbody');
+  if(!tbody)return;
+  // Gather unique values
+  var vals=new Set();
+  tbody.querySelectorAll('tr').forEach(function(tr){
+    var tds=tr.querySelectorAll('td');
+    if(tds.length<=idx||tr.querySelector('td[colspan]'))return;
+    vals.add(tds[idx].textContent.trim()||'(empty)');
+  });
+  var sorted=Array.from(vals).sort();
+  dd=document.createElement('div');
+  dd.className='col-filter-dropdown';
+  // All option
+  var allOpt=document.createElement('div');
+  allOpt.className='fopt fopt-all';
+  allOpt.textContent='— All —';
+  allOpt.addEventListener('click',function(){clearColFilterA3(th,idx);dd.classList.remove('show');});
+  dd.appendChild(allOpt);
+  // Value options
+  sorted.forEach(function(v){
+    var opt=document.createElement('div');
+    opt.className='fopt';
+    opt.textContent=v;
+    opt.addEventListener('click',function(){setColFilterA3(th,idx,v);dd.classList.remove('show');});
+    dd.appendChild(opt);
+  });
+  th.appendChild(dd);
+  dd.classList.add('show');
+}
+
+function setColFilterA3(th,idx,val){
+  var table=th.closest('.tb');
+  if(!table)return;
+  var tid=table.id||(table.id='tb_'+(+new Date()).toString(36));
+  if(!_colF[tid])_colF[tid]={};
+  _colF[tid][idx]=val;
+  var ic=th.querySelector('.col-filter-icon');
+  if(ic)ic.classList.add('active');
+  var dd=th.querySelector('.col-filter-dropdown');
+  if(dd)dd.classList.remove('show');
+  applyA3Filters();
+}
+
+function clearColFilterA3(th,idx){
+  var table=th.closest('.tb');
+  if(!table)return;
+  var tid=table.id||'';
+  if(_colF[tid]){delete _colF[tid][idx];if(Object.keys(_colF[tid]).length===0)delete _colF[tid];}
+  var ic=th.querySelector('.col-filter-icon');
+  if(ic)ic.classList.remove('active');
+  applyA3Filters();
+}
+
+function clearAllFiltersA3(){
+  _searchQ='';_colF={};
+  var inp=document.getElementById('globalSearchInput');
+  if(inp)inp.value='';
+  document.querySelectorAll('.col-filter-icon.active').forEach(function(ic){ic.classList.remove('active');});
+  document.querySelectorAll('.col-filter-dropdown').forEach(function(d){d.remove();});
+  applyA3Filters();
+}
+
+function applyA3Filters(){
+  var hasF=_searchQ||Object.keys(_colF).length>0;
+  var total=0,vis=0;
+  // Remove all existing highlights first
+  document.querySelectorAll('.cf-highlight').forEach(function(m){
+    var p=m.parentNode;var tn=document.createTextNode(m.textContent);
+    p.replaceChild(tn,m);p.normalize();
+  });
+  // Process each .tb table
+  document.querySelectorAll('.tb').forEach(function(table){
+    var tbody=table.querySelector('tbody');
+    if(!tbody)return;
+    var tid=table.id||'';
+    var filters=_colF[tid]||{};
+    var rows=tbody.querySelectorAll('tr');
+    var hasVisibleData=false;
+    rows.forEach(function(row){
+      var cc=row.querySelector('td[colspan]');
+      if(cc){row.style.display='none';return;}
+      total++;
+      var match=true;
+      // Text search across the whole row
+      if(_searchQ){
+        if(row.textContent.toLowerCase().indexOf(_searchQ.toLowerCase())===-1)match=false;
+      }
+      // Column-level filters
+      if(match&&Object.keys(filters).length>0){
+        var cells=row.querySelectorAll('td');
+        for(var ci in filters){
+          var cell=cells[parseInt(ci)];
+          if(!cell||cell.textContent.trim()!==filters[ci]){match=false;break;}
+        }
+      }
+      if(match){
+        row.style.display='';
+        vis++;hasVisibleData=true;
+        // Highlight matching text in visible row cells
+        if(_searchQ)highlightRowA3(row,_searchQ);
+      }else{
+        row.style.display='none';
+      }
+    });
+    // Show "no data" row only when filtering hides everything
+    rows.forEach(function(row){
+      var cc=row.querySelector('td[colspan]');
+      if(cc)row.style.display=hasVisibleData||!hasF?'none':'';
+    });
+  });
+  // Badge
+  var badge=document.getElementById('filterCountBadge');
+  if(badge){
+    if(hasF&&total>0){
+      badge.textContent=vis.toLocaleString()+' of '+total.toLocaleString()+' items';
+      badge.className='filter-count-badge show';
+    }else{
+      badge.textContent='';badge.className='filter-count-badge';
+    }
+  }
+  // Clear button
+  var clr=document.getElementById('clearFiltersBtn');
+  if(clr)clr.className='clear-filters-btn'+(hasF?' show':'');
+}
+
+function highlightRowA3(row,query){
+  if(!query)return;
+  var lq=query.toLowerCase();
+  var cells=row.querySelectorAll('td');
+  cells.forEach(function(cell){
+    if(cell.textContent.toLowerCase().indexOf(lq)===-1)return;
+    // Walk text nodes
+    var tw=document.createTreeWalker(cell,NodeFilter.SHOW_TEXT,null,false);
+    var nodes=[];
+    while(tw.nextNode())nodes.push(tw.currentNode);
+    nodes.forEach(function(tn){
+      var txt=tn.textContent;
+      var ltxt=txt.toLowerCase();
+      var idx=ltxt.indexOf(lq);
+      if(idx===-1)return;
+      var parts=[];
+      var last=0;
+      while(idx!==-1){
+        if(idx>last)parts.push(document.createTextNode(txt.slice(last,idx)));
+        var m=document.createElement('span');m.className='cf-highlight';m.textContent=txt.slice(idx,idx+query.length);
+        parts.push(m);
+        last=idx+query.length;
+        idx=ltxt.indexOf(lq,last);
+      }
+      if(last<txt.length)parts.push(document.createTextNode(txt.slice(last)));
+      var frag=document.createDocumentFragment();
+      parts.forEach(function(p){frag.appendChild(p);});
+      tn.parentNode.replaceChild(frag,tn);
+    });
+  });
+}
+
+// --- A3: FILTER EXPORT (honours visible rows for CSV) ---
+var _origExportCSV=exportTableCSV;
+function exportTableCSV(tableId,filename){
+  var table=document.getElementById(tableId);
+  if(!table){toast('Table not found','er');return;}
+  var rows=[];
+  var hRow=table.querySelector('thead tr');
+  if(hRow){
+    rows.push(Array.from(hRow.querySelectorAll('th')).map(function(th){
+      return '"'+th.textContent.trim().replace(/[↑↓]/g,'').replace(/"/g,'""')+'"';
+    }).join(','));
+  }
+  var hasData=false;
+  Array.from(table.querySelectorAll('tbody tr')).forEach(function(tr){
+    if(tr.style.display==='none')return; // Skip filtered-out rows
+    var cells=tr.querySelectorAll('td');
+    if(!cells.length||(cells.length===1&&cells[0].colSpan>1))return;
+    hasData=true;
+    rows.push(Array.from(cells).map(function(td){
+      return '"'+td.textContent.trim().replace(/"/g,'""')+'"';
+    }).join(','));
+  });
+  if(!hasData){toast('No visible data to export','er');return;}
+  var csv='\ufeff'+rows.join('\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download=filename+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('✅ Downloaded '+filename+'.csv','ok');
+}
 
 // --- A4: SORTABLE COLUMNS ---
 var _sortState = {};
@@ -1013,6 +2044,10 @@ function addExportButtons() {
     { tableId: 'expiringSoonTable', file: 'expiring_soon', wrapperSel: function() {
       var tb = document.getElementById('expiringSoonTable');
       return tb ? tb.closest('.tw') || tb.closest('.card') : null;
+    }},
+    { tableId: 'runningBalanceTable', file: 'running_balance', wrapperSel: function() {
+      var tb = document.getElementById('runningBalanceTable');
+      return tb ? tb.closest('.tw') || tb.closest('.card') : null;
     }}
   ];
   configs.forEach(function(c) {
@@ -1072,7 +2107,8 @@ document.addEventListener('keydown', function(e) {
   }
   if ((ctrl && e.key === 'f') || (e.key === '/' && !ctrl && !e.altKey && !e.metaKey)) {
     e.preventDefault();
-    toast('🔍 Search: Ctrl+F / — coming soon', '');
+    var si = document.getElementById('globalSearchInput');
+    if (si) { si.focus(); si.select(); }
     return;
   }
 });
@@ -1151,9 +2187,9 @@ function setupDashboardDrillDown(r) {
         return;
       }
       var html = '<div style="margin-bottom:8px;font-size:11px;color:var(--mt)">Showing ' + items.length + ' items</div>';
-      html += '<table class="tb" style="font-size:11px"><thead><tr><th>Doc No</th><th>Description</th><th>End Date</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead><tbody>';
+      html += '<table class="tb" style="font-size:11px"><thead><tr><th>Doc No</th><th>Doc No 2</th><th>Description</th><th>End Date</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead><tbody>';
       html += items.slice(0, 50).map(function(e) {
-        return '<tr><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo) + '</td><td>' + esc((e.description||'').substring(0,40)) + '</td><td>' + esc(e.endDate) + '</td><td class="num">฿' + fmt(e.amount) + '</td><td class="num">฿' + fmt(e.remaining) + '</td></tr>';
+        return '<tr><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo) + '</td><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo2||'') + '</td><td>' + esc((e.description||'').substring(0,40)) + '</td><td>' + esc(e.endDate) + '</td><td class="num">฿' + fmt(e.amount) + '</td><td class="num">฿' + fmt(e.remaining) + '</td></tr>';
       }).join('');
       html += '</tbody></table>';
       showDrillPanel(kl, html);
@@ -1186,9 +2222,9 @@ function setupDashboardDrillDown(r) {
       var items = r.expiringSoon || [];
       if (items.length) {
         drillHtml += '<div style="font-size:11px;color:var(--mt);margin-bottom:4px">Related — Expiring Soon (' + items.length + '):</div>';
-        drillHtml += '<table class="tb"><thead><tr><th>Doc</th><th>End Date</th><th class="num">Amount</th></tr></thead><tbody>';
+        drillHtml += '<table class="tb"><thead><tr><th>Doc</th><th>Doc No 2</th><th>End Date</th><th class="num">Amount</th></tr></thead><tbody>';
         drillHtml += items.slice(0, 10).map(function(e) {
-          return '<tr><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo) + '</td><td>' + esc(e.endDate) + '</td><td class="num">฿' + fmt(e.amount) + '</td></tr>';
+          return '<tr><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo) + '</td><td style="font-family:JetBrains Mono,mono">' + esc(e.docNo2||'') + '</td><td>' + esc(e.endDate) + '</td><td class="num">฿' + fmt(e.amount) + '</td></tr>';
         }).join('');
         drillHtml += '</tbody></table>';
       } else {
@@ -1197,6 +2233,201 @@ function setupDashboardDrillDown(r) {
       showDrillPanel(title + ': ' + label, drillHtml);
     };
   });
+}
+
+// ========== B5: RUNNING BALANCE VIEW ==========
+var _rbDocs = [];          // Full doc list from getDocList()
+var _rbData = {};          // {docNo: detail} accumulator
+var _rbRunning = false;
+
+function toggleRunningBalance() {
+  var body = document.getElementById('runningBalanceBody');
+  var toggle = document.getElementById('rbToggle');
+  if (!body) return;
+  var isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (toggle) toggle.textContent = isOpen ? '▶' : '▼';
+  // If opening and table is empty, trigger load
+  if (!isOpen && !_rbRunning && _rbDocs.length === 0) {
+    loadRunningBalance(null);
+  }
+}
+
+function loadRunningBalance(dashData) {
+  _rbRunning = true;
+  document.getElementById('rbProgress').textContent = '⏳ Loading document list...';
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.ok || !r.list || r.list.length === 0) {
+      document.getElementById('rbProgress').textContent = 'No documents found.';
+      _rbRunning = false;
+      return;
+    }
+    _rbDocs = r.list;
+    document.getElementById('rbProgress').textContent =
+      'Loaded ' + r.list.length + ' docs. Fetching details...';
+    document.getElementById('rbDocCount').textContent =
+      r.list.length + ' documents';
+    document.getElementById('rbDocCount').style.display = 'inline';
+    // Start processing items sequentially
+    _rbData = {};
+    processRbItem(0);
+  }).withFailureHandler(function(e) {
+    document.getElementById('rbProgress').textContent = 'Error: ' + e.message;
+    _rbRunning = false;
+  }).getDocList();
+}
+
+function processRbItem(idx) {
+  if (idx >= _rbDocs.length) {
+    // Done
+    document.getElementById('rbProgress').textContent =
+      '✅ Loaded ' + _rbDocs.length + ' documents';
+    _rbRunning = false;
+    updateRbAvgConsumed();
+    return;
+  }
+  var doc = _rbDocs[idx];
+  document.getElementById('rbLoaderText').textContent =
+    '⏳ Loading ' + (idx + 1) + ' of ' + _rbDocs.length + ': ' + doc.docNo + '...';
+  google.script.run.withSuccessHandler(function(detail) {
+    if (detail && detail.ok) {
+      _rbData[detail.docNo] = detail;
+      renderRbRow(detail);
+    }
+    // Progress indicator
+    var pct = Math.round((idx + 1) / _rbDocs.length * 100);
+    document.getElementById('rbProgress').textContent =
+      'Loaded ' + (idx + 1) + ' of ' + _rbDocs.length + ' (' + pct + '%)';
+    // Next item
+    setTimeout(function() { processRbItem(idx + 1); }, 10);
+  }).withFailureHandler(function(e) {
+    // Skip failed item, continue
+    console.warn('Failed to load', doc.docNo, e);
+    setTimeout(function() { processRbItem(idx + 1); }, 10);
+  }).getDocDetail(doc.docNo);
+}
+
+function renderRbRow(detail) {
+  var tbody = document.getElementById('runningBalanceTbody');
+  if (!tbody) return;
+  // Remove loading row if present
+  var lr = document.getElementById('rbLoadingRow');
+  if (lr) lr.remove();
+
+  var amount = detail.amount || 0;
+  var amortized = detail.amortized || 0;
+  var remaining = detail.remaining || 0;
+  var pctConsumed = amount > 0 ? (amortized / amount * 100) : 0;
+
+  var tr = document.createElement('tr');
+  tr.style.cursor = 'pointer';
+  tr.setAttribute('data-docno', detail.docNo);
+  tr.addEventListener('click', function() {
+    showRbDocDetail(detail.docNo);
+  });
+
+  var startEnd = detail.startDate + ' – ' + detail.endDate;
+  // Shorten dates to show month/year
+  if (startEnd.length > 30) {
+    var s = (detail.startDate || '').substring(0, 7);
+    var e = (detail.endDate || '').substring(0, 7);
+    startEnd = s + ' – ' + e;
+  }
+
+  tr.innerHTML =
+    '<td style="font-family:JetBrains Mono,mono;font-size:11px">' + esc(detail.docNo) + '</td>' +
+    '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc((detail.description || '').substring(0, 40)) + '</td>' +
+    '<td style="font-size:10px;white-space:nowrap">' + esc(startEnd) + '</td>' +
+    '<td class="num">฿' + fmt(amount) + '</td>' +
+    '<td class="num">฿' + fmt(amortized) + '</td>' +
+    '<td class="num">฿' + fmt(remaining) + '</td>' +
+    '<td class="num">' + pctConsumed.toFixed(1) + '%</td>';
+
+  tbody.appendChild(tr);
+}
+
+function updateRbAvgConsumed() {
+  var el = document.getElementById('dAvgConsumed');
+  if (!el) return;
+  var keys = Object.keys(_rbData);
+  if (keys.length === 0) { el.textContent = '—'; return; }
+  var totalPct = 0, count = 0;
+  keys.forEach(function(k) {
+    var d = _rbData[k];
+    if (d && d.amount > 0) {
+      totalPct += (d.amortized / d.amount * 100);
+      count++;
+    }
+  });
+  el.textContent = count > 0 ? totalPct.toFixed(1) + '%' : '—';
+}
+
+function showRbDocDetail(docNo) {
+  if (!docNo) return;
+  // If we already have the detail in _rbData, use it; otherwise fetch
+  var detail = _rbData[docNo];
+  if (detail) {
+    showRbDetailPanel(detail);
+  } else {
+    document.getElementById('rbProgress').textContent =
+      '⏳ Fetching ' + docNo + '...';
+    google.script.run.withSuccessHandler(function(r) {
+      if (r && r.ok) {
+        _rbData[r.docNo] = r;
+        showRbDetailPanel(r);
+      } else {
+        toast('❌ ' + (r ? r.error : 'Failed to load detail'), 'er');
+      }
+    }).withFailureHandler(function(e) {
+      toast('❌ ' + e.message, 'er');
+    }).getDocDetail(docNo);
+  }
+}
+
+function showRbDetailPanel(detail) {
+  if (!detail || !detail.ok) {
+    toast('❌ No detail data', 'er');
+    return;
+  }
+  var schedule = detail.schedule || [];
+  var html = '<div style="margin-bottom:10px">' +
+    '<div class="kpi-grid" style="margin-bottom:8px">' +
+    '<div class="kpi"><div class="kv" style="font-size:15px;font-family:JetBrains Mono,mono">' + esc(detail.docNo) + '</div><div class="kl">Doc No</div></div>' +
+    '<div class="kpi"><div class="kv" style="font-size:14px">฿' + fmt(detail.amount) + '</div><div class="kl">Amount</div></div>' +
+    '<div class="kpi gn"><div class="kv" style="font-size:14px">฿' + fmt(detail.amortized) + '</div><div class="kl">Amortized</div></div>' +
+    '<div class="kpi rd"><div class="kv" style="font-size:14px">฿' + fmt(detail.remaining) + '</div><div class="kl">Remaining</div></div>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--mt);margin-bottom:6px">' +
+    esc(detail.description || '') +
+    (detail.startDate ? ' · ' + esc(detail.startDate) + ' → ' + esc(detail.endDate) : '') +
+    '</div>';
+
+  if (schedule.length > 0) {
+    html += '<div style="font-weight:500;font-size:12px;margin-bottom:4px">📅 Month-by-Month Schedule (' + schedule.length + ' of ' + (detail.scheduleRows || schedule.length) + ' rows shown)</div>' +
+      '<table class="tb" style="font-size:11px"><thead><tr>' +
+      '<th>Period</th><th class="num">Amort Amount</th><th class="num">Accumulated</th><th class="num">Remaining</th><th>GL</th><th>IO</th><th class="num">Days</th>' +
+      '</tr></thead><tbody>' +
+      schedule.map(function(s) {
+        return '<tr>' +
+          '<td style="font-family:JetBrains Mono,mono">' + esc(s.period) + '</td>' +
+          '<td class="num">฿' + fmt(s.amortAmount) + '</td>' +
+          '<td class="num">฿' + fmt(s.accumulated) + '</td>' +
+          '<td class="num">฿' + fmt(s.remaining) + '</td>' +
+          '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(s.glPrepaid || '') + '</td>' +
+          '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(s.io || '') + '</td>' +
+          '<td class="num">' + (s.daysInMonth || '—') + '</td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table>';
+    if (detail.scheduleRows > schedule.length) {
+      html += '<div style="font-size:10px;color:var(--mt);margin-top:4px">📌 Showing first ' + schedule.length + ' of ' + detail.scheduleRows + ' schedule rows.</div>';
+    }
+  } else {
+    html += '<div style="text-align:center;color:var(--mt);padding:20px">📊 No schedule data available</div>';
+  }
+
+  html += '</div>';
+  showDrillPanel('📊 Running Balance: ' + esc(detail.docNo), html);
 }
 
 // --- Inject Print Styles for PDF export ---
@@ -1221,10 +2452,924 @@ function setupDashboardDrillDown(r) {
   document.head.appendChild(ps);
 })();
 
+// Listen for pagination events
+document.addEventListener('paginate', function(e) {
+  var section = e.detail.section;
+  if (section === 'void') {
+    // Re-load batch void docs with new page
+    loadBatchVoidDocs();
+  } else if (section === 'checker') {
+    runChecker();
+  }
+});
+
+// ========== PREPAID RECORD CRUD ==========
+var _crudRecords = [];
+var _crudPageSize = 50;
+var _crudPage = 1;
+var _crudEditing = null; // docNo when editing, null when adding
+
+function loadCrudData() {
+  document.getElementById('loaderCrud').classList.remove('hidden');
+  document.getElementById('crudBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--mt)">⏳ Loading...</td></tr>';
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderCrud').classList.add('hidden');
+    if(!r.ok){
+      document.getElementById('crudBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--rd)">Error: '+(r.error||'')+'</td></tr>';
+      return;
+    }
+    _crudRecords = r.records || [];
+    _crudPage = 1;
+    document.getElementById('crudRecordCount').textContent = _crudRecords.length + ' records';
+    crudRenderTable();
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderCrud').classList.add('hidden');
+    document.getElementById('crudBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--rd)">Error: '+e.message+'</td></tr>';
+    toast('❌ '+e.message,'er');
+  }).getCrudRecords();
+}
+
+function crudRenderTable() {
+  var searchVal = (document.getElementById('crudSearch').value || '').toLowerCase().trim();
+  var statusFilter = document.getElementById('crudStatusFilter').value;
+  
+  // Filter
+  var filtered = _crudRecords.filter(function(r){
+    if(searchVal){
+      var txt = (r.docNo + ' ' + r.description + ' ' + r.io + ' ' + r.glPrepaid + ' ' + r.plate).toLowerCase();
+      if(txt.indexOf(searchVal) === -1) return false;
+    }
+    if(statusFilter && r.status !== statusFilter) return false;
+    return true;
+  });
+  
+  document.getElementById('crudFilterCount').textContent = 'Showing ' + filtered.length + ' of ' + _crudRecords.length;
+  
+  // Paginate
+  var totalPages = Math.max(1, Math.ceil(filtered.length / _crudPageSize));
+  if(_crudPage > totalPages) _crudPage = totalPages;
+  var start = (_crudPage - 1) * _crudPageSize;
+  var pageItems = filtered.slice(start, start + _crudPageSize);
+  
+  // Update pagination controls
+  document.getElementById('crudPageInfo').textContent = filtered.length + ' items';
+  document.getElementById('crudPageNum').textContent = _crudPage + ' / ' + totalPages;
+  document.getElementById('crudPrevBtn').disabled = _crudPage <= 1;
+  document.getElementById('crudNextBtn').disabled = _crudPage >= totalPages;
+  
+  if(pageItems.length === 0){
+    document.getElementById('crudBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--mt)">No records found</td></tr>';
+    return;
+  }
+  
+  var html = '';
+  for(var i = 0; i < pageItems.length; i++){
+    var r = pageItems[i];
+    var statusColor = r.status === 'Active' ? 'var(--gn)' : (r.status === 'Expired' ? 'var(--mt)' : 'var(--bl)');
+    html += '<tr>' +
+      '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(r.docNo) + '</td>' +
+      '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc((r.description||'').substring(0,35)) + '</td>' +
+      '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(r.io) + '</td>' +
+      '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(r.glPrepaid) + '</td>' +
+      '<td style="font-size:10px">' + esc(r.startDate) + '</td>' +
+      '<td style="font-size:10px">' + esc(r.endDate) + '</td>' +
+      '<td class="num">฿' + fmt(r.amount) + '</td>' +
+      '<td class="num">฿' + fmt(r.amortized) + '</td>' +
+      '<td class="num">฿' + fmt(r.remaining) + '</td>' +
+      '<td class="num">' + r.consumed + '%</td>' +
+      '<td><span style="color:' + statusColor + ';font-size:10px;font-weight:500">' + esc(r.status || '—') + '</span></td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="btn btn-ghost btn-sm" onclick="crudShowEditModal(\'' + r.docNo.replace(/'/g,"\\'") + '\')" title="Edit" style="padding:2px 6px;font-size:10px">✏️</button> ' +
+        '<button class="btn btn-ghost btn-sm" onclick="crudShowDeleteModal(\'' + r.docNo.replace(/'/g,"\\'") + '\')" title="Delete" style="padding:2px 6px;font-size:10px;color:var(--rd)">🗑️</button>' +
+      '</td></tr>';
+  }
+  document.getElementById('crudBody').innerHTML = html;
+}
+
+function crudFilter() {
+  crudRenderTable();
+}
+
+function crudPrevPage() {
+  if(_crudPage > 1) { _crudPage--; crudRenderTable(); }
+}
+
+function crudNextPage() {
+  _crudPage++; crudRenderTable();
+}
+
+function crudRefresh() {
+  loadCrudData();
+}
+
+// ===== MODAL =====
+function crudShowAddModal() {
+  _crudEditing = null;
+  document.getElementById('crudModalTitle').textContent = '✏️ New Prepaid Record';
+  document.getElementById('crudSaveBtn').innerHTML = '<i class="bi bi-save"></i> Save';
+  
+  // Clear all fields
+  document.getElementById('crudCompany').value = '';
+  document.getElementById('crudPostingDate').value = '';
+  document.getElementById('crudDocDate').value = '';
+  document.getElementById('crudDescription').value = '';
+  document.getElementById('crudPlate').value = '';
+  document.getElementById('crudIo').value = '';
+  document.getElementById('crudGlPrepaid').value = '';
+  document.getElementById('crudCostCenter').value = '';
+  document.getElementById('crudStartDate').value = '';
+  document.getElementById('crudEndDate').value = '';
+  document.getElementById('crudAmount').value = '';
+  document.getElementById('crudModalError').style.display = 'none';
+  
+  // Load defaults from settings
+  google.script.run.withSuccessHandler(function(r){
+    if(r.ok && r.settings){
+      document.getElementById('crudCompany').value = r.settings.company || '';
+      document.getElementById('crudGlPrepaid').value = r.settings.prepaidGL || '';
+    }
+  }).getSettings();
+  
+  // Set today's date as default for posting and doc date
+  var today = new Date().toISOString().slice(0,10);
+  document.getElementById('crudPostingDate').value = today;
+  document.getElementById('crudDocDate').value = today;
+  
+  document.getElementById('crudModalOverlay').style.display = 'block';
+  document.getElementById('crudModal').style.display = 'flex';
+}
+
+function crudShowEditModal(docNo) {
+  _crudEditing = docNo;
+  document.getElementById('crudModalTitle').textContent = '✏️ Edit Record: ' + docNo;
+  document.getElementById('crudSaveBtn').innerHTML = '<i class="bi bi-save"></i> Update';
+  document.getElementById('crudModalError').style.display = 'none';
+  
+  // Find the record
+  var rec = null;
+  for(var i = 0; i < _crudRecords.length; i++){
+    if(_crudRecords[i].docNo === docNo){ rec = _crudRecords[i]; break; }
+  }
+  if(!rec){
+    toast('❌ Record not found','er');
+    return;
+  }
+  
+  // Populate fields
+  document.getElementById('crudCompany').value = rec.company || '';
+  document.getElementById('crudPostingDate').value = rec.postingDate || '';
+  document.getElementById('crudDocDate').value = rec.docDate || '';
+  document.getElementById('crudDescription').value = rec.description || '';
+  document.getElementById('crudPlate').value = rec.plate || '';
+  document.getElementById('crudIo').value = rec.io || '';
+  document.getElementById('crudGlPrepaid').value = rec.glPrepaid || '';
+  document.getElementById('crudCostCenter').value = rec.costCenter || '';
+  document.getElementById('crudStartDate').value = rec.startDate || '';
+  document.getElementById('crudEndDate').value = rec.endDate || '';
+  document.getElementById('crudAmount').value = rec.amount || '';
+  
+  document.getElementById('crudModalOverlay').style.display = 'block';
+  document.getElementById('crudModal').style.display = 'flex';
+}
+
+function crudCloseModal() {
+  document.getElementById('crudModalOverlay').style.display = 'none';
+  document.getElementById('crudModal').style.display = 'none';
+  document.getElementById('loaderCrudSave').classList.add('hidden');
+  document.getElementById('crudModalError').style.display = 'none';
+}
+
+function crudSave() {
+  // Gather data
+  var data = {
+    company: document.getElementById('crudCompany').value.trim(),
+    postingDate: document.getElementById('crudPostingDate').value,
+    docDate: document.getElementById('crudDocDate').value,
+    description: document.getElementById('crudDescription').value.trim(),
+    plate: document.getElementById('crudPlate').value.trim(),
+    io: document.getElementById('crudIo').value.trim(),
+    glPrepaid: document.getElementById('crudGlPrepaid').value.trim(),
+    costCenter: document.getElementById('crudCostCenter').value.trim(),
+    startDate: document.getElementById('crudStartDate').value,
+    endDate: document.getElementById('crudEndDate').value,
+    amount: parseFloat(document.getElementById('crudAmount').value) || 0
+  };
+  
+  // Client-side validation
+  var required = [
+    {field: 'description', label: 'Description'},
+    {field: 'io', label: 'IO'},
+    {field: 'glPrepaid', label: 'GL Prepaid'},
+    {field: 'costCenter', label: 'Cost Center'},
+    {field: 'startDate', label: 'Start Date'},
+    {field: 'endDate', label: 'End Date'}
+  ];
+  for(var i = 0; i < required.length; i++){
+    if(!data[required[i].field]){
+      document.getElementById('crudModalError').textContent = '⚠️ กรุณากรอก ' + required[i].label;
+      document.getElementById('crudModalError').style.display = 'block';
+      return;
+    }
+  }
+  if(data.amount <= 0){
+    document.getElementById('crudModalError').textContent = '⚠️ จำนวนเงินต้องมากกว่า 0';
+    document.getElementById('crudModalError').style.display = 'block';
+    return;
+  }
+  if(data.startDate > data.endDate){
+    document.getElementById('crudModalError').textContent = '⚠️ วันที่เริ่มต้นต้อง ≤ วันที่สิ้นสุด';
+    document.getElementById('crudModalError').style.display = 'block';
+    return;
+  }
+  
+  document.getElementById('crudModalError').style.display = 'none';
+  document.getElementById('loaderCrudSave').classList.remove('hidden');
+  document.getElementById('crudSaveBtn').disabled = true;
+  
+  if(_crudEditing){
+    // Update existing record
+    google.script.run.withSuccessHandler(function(r){
+      document.getElementById('loaderCrudSave').classList.add('hidden');
+      document.getElementById('crudSaveBtn').disabled = false;
+      if(r.ok){
+        toast('✅ ' + r.message, 'ok');
+        crudCloseModal();
+        loadCrudData();
+      } else {
+        document.getElementById('crudModalError').textContent = '⚠️ ' + (r.error || 'Update failed');
+        document.getElementById('crudModalError').style.display = 'block';
+        toast('❌ ' + (r.error || 'Update failed'), 'er');
+      }
+    }).withFailureHandler(function(e){
+      document.getElementById('loaderCrudSave').classList.add('hidden');
+      document.getElementById('crudSaveBtn').disabled = false;
+      document.getElementById('crudModalError').textContent = '⚠️ ' + e.message;
+      document.getElementById('crudModalError').style.display = 'block';
+      toast('❌ ' + e.message, 'er');
+    }).updatePrepaidRecord(_crudEditing, data);
+  } else {
+    // Add new record
+    google.script.run.withSuccessHandler(function(r){
+      document.getElementById('loaderCrudSave').classList.add('hidden');
+      document.getElementById('crudSaveBtn').disabled = false;
+      if(r.ok){
+        toast('✅ ' + r.message, 'ok');
+        crudCloseModal();
+        loadCrudData();
+      } else {
+        document.getElementById('crudModalError').textContent = '⚠️ ' + (r.error || 'Save failed');
+        document.getElementById('crudModalError').style.display = 'block';
+        toast('❌ ' + (r.error || 'Save failed'), 'er');
+      }
+    }).withFailureHandler(function(e){
+      document.getElementById('loaderCrudSave').classList.add('hidden');
+      document.getElementById('crudSaveBtn').disabled = false;
+      document.getElementById('crudModalError').textContent = '⚠️ ' + e.message;
+      document.getElementById('crudModalError').style.display = 'block';
+      toast('❌ ' + e.message, 'er');
+    }).addPrepaidRecord(data);
+  }
+}
+
+// ===== DELETE =====
+var _crudDeleteDocNo = null;
+
+function crudShowDeleteModal(docNo) {
+  _crudDeleteDocNo = docNo;
+  
+  // Find record
+  var rec = null;
+  for(var i = 0; i < _crudRecords.length; i++){
+    if(_crudRecords[i].docNo === docNo){ rec = _crudRecords[i]; break; }
+  }
+  if(!rec){
+    toast('❌ Record not found','er');
+    return;
+  }
+  
+  document.getElementById('crudDeleteDocNo').textContent = '📄 ' + rec.docNo;
+  document.getElementById('crudDeleteDesc').textContent = rec.description || '(no description)';
+  document.getElementById('crudDeleteAmount').textContent = '💰 Amount: ฿' + fmt(rec.amount);
+  document.getElementById('crudDeleteDates').textContent = '📅 ' + rec.startDate + ' → ' + rec.endDate + ' · Status: ' + (rec.status || '—');
+  
+  // Check if amortized
+  var warnEl = document.getElementById('crudDeleteWarning');
+  if(rec.amortized > 0){
+    warnEl.style.display = 'block';
+    document.getElementById('crudDeleteWarnText').textContent = 'This item has ' + fmt(rec.amortized) + ' already amortized. Deleting will affect amortization history.';
+  } else {
+    warnEl.style.display = 'none';
+  }
+  
+  document.getElementById('crudDeleteOverlay').style.display = 'block';
+  document.getElementById('crudDeleteModal').style.display = 'block';
+  document.getElementById('loaderCrudDelete').classList.add('hidden');
+  document.getElementById('crudDeleteBtn').disabled = false;
+}
+
+function crudCloseDelete() {
+  document.getElementById('crudDeleteOverlay').style.display = 'none';
+  document.getElementById('crudDeleteModal').style.display = 'none';
+  _crudDeleteDocNo = null;
+}
+
+function crudDeleteConfirm() {
+  if(!_crudDeleteDocNo) return;
+  if(!confirm('⚠️ ยืนยันการลบเอกสาร ' + _crudDeleteDocNo + '?')) return;
+  
+  document.getElementById('loaderCrudDelete').classList.remove('hidden');
+  document.getElementById('crudDeleteBtn').disabled = true;
+  
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderCrudDelete').classList.add('hidden');
+    document.getElementById('crudDeleteBtn').disabled = false;
+    if(r.ok){
+      toast('✅ ' + r.message, 'ok');
+      crudCloseDelete();
+      loadCrudData();
+    } else {
+      toast('❌ ' + (r.error || 'Delete failed'), 'er');
+    }
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderCrudDelete').classList.add('hidden');
+    document.getElementById('crudDeleteBtn').disabled = false;
+    toast('❌ ' + e.message, 'er');
+  }).deletePrepaidRecord(_crudDeleteDocNo);
+}
+
 // --- PHASE A INIT ---
 function phaseAInit() {
   initTableIds();
   addExportButtons();
+  initA3();
+  updatePendingBadge();
+}
+
+// ========== C2: PERIOD-CLOSE FUNCTIONS ==========
+
+var _pcPeriod = '';
+
+function loadPeriodClose() {
+  // Set default period to current month
+  var now = new Date();
+  var defaultPeriod = now.getFullYear() + '-' + (now.getMonth() < 9 ? '0' : '') + (now.getMonth() + 1);
+  document.getElementById('pcPeriod').value = defaultPeriod;
+  _pcPeriod = defaultPeriod;
+  document.getElementById('pcChecklistCard').style.display = 'none';
+  document.getElementById('pcHistoryCard').style.display = 'none';
+  document.getElementById('pcStatusBadge').style.display = 'none';
+  document.getElementById('resultPeriodClose').classList.remove('show');
+  // Auto-load checklist
+  setTimeout(loadPeriodChecklist, 100);
+}
+
+function loadPeriodChecklist() {
+  var period = document.getElementById('pcPeriod').value.trim();
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) { toast('กรุณากรอกงวดในรูปแบบ YYYY-MM','er'); return; }
+  _pcPeriod = period;
+  document.getElementById('loaderPeriodClose').classList.remove('hidden');
+  document.getElementById('pcChecklistCard').style.display = 'none';
+  document.getElementById('pcHistoryCard').style.display = 'none';
+  document.getElementById('pcStatusBadge').style.display = 'none';
+  document.getElementById('resultPeriodClose').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    if (!r.ok) { toast('❌ ' + (r.error || 'Error'), 'er'); return; }
+
+    // Get period status as well
+    google.script.run.withSuccessHandler(function(statusR) {
+      if (statusR.ok) {
+        renderPeriodChecklist(r, statusR);
+      } else {
+        renderPeriodChecklist(r, null);
+      }
+    }).withFailureHandler(function(e) {
+      renderPeriodChecklist(r, null);
+    }).getPeriodStatus(period);
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getCloseChecklist(period);
+}
+
+function renderPeriodChecklist(checklistR, statusR) {
+  document.getElementById('pcChecklistCard').style.display = 'block';
+  document.getElementById('pcChecklistPeriod').textContent = checklistR.period;
+
+  // Status badge
+  var badgeEl = document.getElementById('pcStatusBadge');
+  badgeEl.style.display = 'block';
+  var isClosed = statusR && statusR.isClosed;
+  var closedBy = statusR ? statusR.closedBy : '';
+  var closedAt = statusR ? statusR.closedAt : '';
+  if (isClosed) {
+    badgeEl.innerHTML = '<div class="al" style="background:rgba(184,82,82,.07);border-color:rgba(184,82,82,.18);color:#fca5a5"><i class="bi bi-lock-fill"></i> 🔒 ปิดแล้ว — โดย ' + esc(closedBy) + (closedAt ? ' เมื่อ ' + esc(closedAt.substring(0,10)) : '') + '</div>';
+  } else {
+    badgeEl.innerHTML = '<div class="al al-ok"><i class="bi bi-unlock-fill"></i> 🔓 เปิดอยู่ — ยังไม่ได้ปิดงวด</div>';
+  }
+
+  // Checklist items
+  var itemsEl = document.getElementById('pcChecklistItems');
+  var items = checklistR.items || [];
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var icon = item.done ? '✅' : '⏳';
+    var statusClass = item.done ? '' : 'style="color:var(--mt)"';
+    html += '<div class="card" style="padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:18px">' + icon + '</span>' +
+      '<div><div style="font-size:13px;font-weight:500">' + esc(item.label) + '</div>' +
+      '<div style="font-size:11px;color:var(--mt)" ' + statusClass + '>' + esc(item.detail) + '</div></div></div>' +
+      '<button class="btn ' + (item.done ? 'btn-ghost' : 'btn-pri') + ' btn-sm" onclick="runChecklistItem(\'' + esc(checklistR.period) + '\',\'' + esc(item.key) + '\')"' + (item.done ? ' disabled' : '') + '>' +
+      (item.done ? '✅ Done' : '▶️ Run') + '</button></div>';
+  }
+  itemsEl.innerHTML = html;
+
+  // Close/Reopen buttons
+  var closeBtn = document.getElementById('pcCloseBtn');
+  var reopenBtn = document.getElementById('pcReopenBtn');
+  if (isClosed) {
+    closeBtn.style.display = 'none';
+    reopenBtn.style.display = 'inline-flex';
+    document.getElementById('pcNotes').value = statusR.notes || '';
+  } else {
+    closeBtn.style.display = 'inline-flex';
+    reopenBtn.style.display = 'none';
+    closeBtn.disabled = !checklistR.allDone;
+    if (checklistR.allDone) {
+      closeBtn.innerHTML = '<i class="bi bi-lock-fill"></i> Close Period ✓';
+      closeBtn.className = 'btn btn-gn';
+    } else {
+      closeBtn.innerHTML = '<i class="bi bi-lock-fill"></i> Close Period';
+      closeBtn.className = 'btn btn-ghost';
+    }
+  }
+}
+
+function runChecklistItem(period, itemKey) {
+  document.getElementById('loaderPeriodClose').classList.remove('hidden');
+  document.getElementById('resultPeriodClose').classList.remove('show');
+
+  if (itemKey === 'preChecker') {
+    // Run pre-upload checker
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      if (r.ok && r.status === 'PASS') {
+        // Mark as done
+        google.script.run.withSuccessHandler(function() {
+          toast('✅ Pre-Upload Checker: PASS — บันทึกแล้ว', 'ok');
+          loadPeriodChecklist();
+        }).markChecklistItem(period, 'preChecker');
+      } else {
+        var errCount = r.errorCount || 0;
+        var warnCount = r.warningCount || 0;
+        toast('❌ Pre-Upload Checker: ' + errCount + ' errors, ' + warnCount + ' warnings — แก้ไขก่อน', 'er');
+        showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> Pre-Upload Checker: ' + errCount + ' errors — ต้องแก้ไขก่อนปิดงวด</div>');
+      }
+    }).withFailureHandler(function(e) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      toast('❌ ' + e.message, 'er');
+    }).runPreUploadCheck(period);
+  } else if (itemKey === 'amortRun') {
+    // Run amortization
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      if (r.ok) {
+        google.script.run.withSuccessHandler(function() {
+          toast('✅ Amortization: ' + r.scheduleRows + ' rows — บันทึกแล้ว', 'ok');
+          loadPeriodChecklist();
+        }).markChecklistItem(period, 'amortRun');
+        showResult('resultPeriodClose', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ' + esc(r.message) + '</div>');
+      } else {
+        toast('❌ Amortization: ' + (r.error || 'Error'), 'er');
+        showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+      }
+    }).withFailureHandler(function(e) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      toast('❌ ' + e.message, 'er');
+    }).runMonthEndAmortization(period);
+  } else if (itemKey === 'sapExported') {
+    // Export SAP JE
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      if (r.ok) {
+        google.script.run.withSuccessHandler(function() {
+          toast('✅ SAP JE: ' + r.totalDocs + ' docs — บันทึกแล้ว', 'ok');
+          loadPeriodChecklist();
+        }).markChecklistItem(period, 'sapExported');
+        showResult('resultPeriodClose', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ' + esc(r.message) + '</div>');
+      } else {
+        toast('❌ SAP JE: ' + (r.error || 'Error'), 'er');
+        showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+      }
+    }).withFailureHandler(function(e) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      toast('❌ ' + e.message, 'er');
+    }).exportSAPJE(period);
+  } else if (itemKey === 'voidBatchComplete') {
+    // Check void status and mark done
+    google.script.run.withSuccessHandler(function(r) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      if (r.ok && r.succeeded > 0) {
+        google.script.run.withSuccessHandler(function() {
+          toast('✅ Void Batch: ' + r.succeeded + ' docs — บันทึกแล้ว', 'ok');
+          loadPeriodChecklist();
+        }).markChecklistItem(period, 'voidBatchComplete');
+        showResult('resultPeriodClose', '<div class="al al-ok"><i class="bi bi-check-circle"></i> Void Batch: ' + r.succeeded + ' สำเร็จ</div>');
+      } else {
+        toast('❌ ยังไม่มีรายการ Void Batch', 'er');
+        showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> ยังไม่มีรายการ Void — ไปที่หน้า Void เพื่อดำเนินการ Batch Void ก่อน</div>');
+      }
+    }).withFailureHandler(function(e) {
+      document.getElementById('loaderPeriodClose').classList.add('hidden');
+      toast('❌ ' + e.message, 'er');
+    }).runCloseChecklist(period);
+  }
+}
+
+function executeClosePeriod() {
+  var period = _pcPeriod;
+  var notes = document.getElementById('pcNotes').value.trim();
+  if (!confirm('🔒 ยืนยันการปิดงวด ' + period + '?' + (notes ? '\n\nหมายเหตุ: ' + notes : ''))) return;
+
+  document.getElementById('loaderPeriodClose').classList.remove('hidden');
+  document.getElementById('resultPeriodClose').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    if (r.ok) {
+      toast('✅ ' + r.message, 'ok');
+      showResult('resultPeriodClose', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ' + esc(r.message) + '</div>');
+      loadPeriodChecklist();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).closePeriod(period, notes);
+}
+
+function executeReopenPeriod() {
+  var period = _pcPeriod;
+  if (!confirm('⚠️ เปิดงวด ' + period + ' อีกครั้ง? (เฉพาะ admin)')) return;
+
+  document.getElementById('loaderPeriodClose').classList.remove('hidden');
+  document.getElementById('resultPeriodClose').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    if (r.ok) {
+      toast('✅ ' + r.message, 'ok');
+      showResult('resultPeriodClose', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ' + esc(r.message) + '</div>');
+      loadPeriodChecklist();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      showResult('resultPeriodClose', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).reopenPeriod(period);
+}
+
+function loadPeriodStatusHistory() {
+  document.getElementById('loaderPeriodClose').classList.remove('hidden');
+  document.getElementById('pcHistoryCard').style.display = 'none';
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    if (!r.ok || !r.statuses) { toast('❌ ' + (r.error || 'Error'), 'er'); return; }
+
+    document.getElementById('pcHistoryCard').style.display = 'block';
+    var statuses = r.statuses;
+    var tb = document.getElementById('pcHistoryBody');
+    if (statuses.length === 0) {
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--mt)">ไม่มีประวัติ</td></tr>';
+      return;
+    }
+    tb.innerHTML = statuses.map(function(s) {
+      var statusTxt = s.isClosed ? '🔒 ปิดแล้ว' : '🔓 เปิดอยู่';
+      var statusColor = s.isClosed ? 'var(--rd)' : 'var(--gn)';
+      var cl = s.checklist || {};
+      return '<tr>' +
+        '<td style="font-family:JetBrains Mono,mono">' + esc(s.period) + '</td>' +
+        '<td style="color:' + statusColor + ';font-weight:500">' + statusTxt + '</td>' +
+        '<td>' + esc(s.closedBy || '—') + '</td>' +
+        '<td style="font-size:10px">' + (s.closedAt ? esc(s.closedAt.substring(0,10)) : '—') + '</td>' +
+        '<td>' + (cl.preChecker ? '✅' : '❌') + '</td>' +
+        '<td>' + (cl.amortRun ? '✅' : '❌') + '</td>' +
+        '<td>' + (cl.sapExported ? '✅' : '❌') + '</td>' +
+        '<td>' + (cl.voidBatchComplete ? '✅' : '❌') + '</td>' +
+        '<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis">' + esc(s.notes || '') + '</td>' +
+        '</tr>';
+    }).join('');
+    toast('✅ โหลดประวัติ ' + statuses.length + ' งวด', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderPeriodClose').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getAllPeriodStatuses();
+}
+
+// ========== C3: APPROVAL FUNCTIONS ==========
+
+var _approvalTab = 'my';
+var _approvalDocList = [];
+
+function loadApprovals() {
+  document.getElementById('approvalMyContent').style.display = 'block';
+  document.getElementById('approvalPendingContent').style.display = 'none';
+  document.getElementById('approvalHistoryContent').style.display = 'none';
+  document.getElementById('resultApproval').classList.remove('show');
+  // Load my requests and pending count
+  loadMyRequests();
+  updatePendingBadge();
+}
+
+function setApprovalTab(tab) {
+  _approvalTab = tab;
+  ['my','pending','history'].forEach(function(t) {
+    var btn = document.getElementById('approvalTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) btn.className = 'btn ' + (t === tab ? 'btn-pri' : 'btn-ghost');
+  });
+  document.getElementById('approvalMyContent').style.display = tab === 'my' ? 'block' : 'none';
+  document.getElementById('approvalPendingContent').style.display = tab === 'pending' ? 'block' : 'none';
+  document.getElementById('approvalHistoryContent').style.display = tab === 'history' ? 'block' : 'none';
+  document.getElementById('resultApproval').classList.remove('show');
+
+  if (tab === 'pending') loadPendingApprovals();
+  if (tab === 'history') loadApprovalHistory();
+}
+
+function updatePendingBadge() {
+  google.script.run.withSuccessHandler(function(r) {
+    var badge = document.getElementById('pendingBadge');
+    if (badge && r.ok && r.count > 0) {
+      badge.textContent = r.count;
+      badge.style.display = 'inline';
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
+  }).withFailureHandler(function(){}).getPendingApprovals();
+}
+
+// --- Approval Doc List (reuse getDocList) ---
+
+function loadApprovalDocList() {
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  document.getElementById('approvalDocBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">⏳ กำลังโหลด...</td></tr>';
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (!r.ok || !r.list) {
+      document.getElementById('approvalDocBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">' + (r.error || 'Error') + '</td></tr>';
+      return;
+    }
+    _approvalDocList = r.list;
+    var tb = document.getElementById('approvalDocBody');
+    if (r.list.length === 0) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">ไม่มีเอกสาร</td></tr>';
+      document.getElementById('approvalDocCount').textContent = '0 รายการ';
+      return;
+    }
+    tb.innerHTML = r.list.map(function(d) {
+      return '<tr>' +
+        '<td style="text-align:center"><input type="checkbox" class="approval-doc-cb" value="' + esc(d.docNo) + '" onchange="onApprovalCheckChange()"></td>' +
+        '<td style="font-family:JetBrains Mono,mono">' + esc(d.docNo) + '</td>' +
+        '<td style="font-family:JetBrains Mono,mono">' + esc(d.docNo2 || '') + '</td>' +
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc((d.description || '').substring(0,40)) + '</td>' +
+        '<td>' + esc(d.plate || '') + '</td>' +
+        '</tr>';
+    }).join('');
+    document.getElementById('approvalDocCount').textContent = r.list.length + ' รายการ';
+    document.getElementById('approvalSelectAll').checked = false;
+    toast('✅ โหลด ' + r.list.length + ' รายการ', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    document.getElementById('approvalDocBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--mt)">Error: ' + e.message + '</td></tr>';
+  }).getDocList();
+}
+
+function onApprovalSelectAll() {
+  var checked = document.getElementById('approvalSelectAll').checked;
+  document.querySelectorAll('.approval-doc-cb').forEach(function(cb){cb.checked = checked;});
+  updateApprovalCount();
+}
+
+function onApprovalCheckChange() {
+  updateApprovalCount();
+  var all = document.querySelectorAll('.approval-doc-cb');
+  var allChecked = true;
+  all.forEach(function(cb){if(!cb.checked) allChecked = false;});
+  document.getElementById('approvalSelectAll').checked = allChecked;
+}
+
+function updateApprovalCount() {
+  var selected = document.querySelectorAll('.approval-doc-cb:checked').length;
+  var el = document.getElementById('approvalDocCount');
+  if (selected > 0) {
+    el.innerHTML = '✅ เลือก ' + selected + ' รายการ';
+    el.style.color = 'var(--gn)';
+  } else {
+    el.textContent = document.querySelectorAll('.approval-doc-cb').length + ' รายการ';
+    el.style.color = 'var(--mt)';
+  }
+}
+
+function getSelectedApprovalDocs() {
+  var selected = [];
+  document.querySelectorAll('.approval-doc-cb:checked').forEach(function(cb){
+    selected.push(cb.value);
+  });
+  return selected;
+}
+
+function executeSubmitApproval() {
+  var selected = getSelectedApprovalDocs();
+  if (selected.length === 0) { toast('❌ กรุณาเลือกเอกสารอย่างน้อย 1 รายการ', 'er'); return; }
+  var notes = document.getElementById('approvalNotes').value.trim();
+
+  if (!confirm('ส่งขออนุมัติ ' + selected.length + ' เอกสาร?' + (notes ? '\n\nหมายเหตุ: ' + notes : ''))) return;
+
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  document.getElementById('resultApproval').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (r.ok) {
+      toast('✅ ' + r.message, 'ok');
+      showResult('resultApproval', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ' + esc(r.message) + '</div>');
+      // Reload
+      loadMyRequests();
+      updatePendingBadge();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      showResult('resultApproval', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).submitForApproval(selected, notes);
+}
+
+function loadMyRequests() {
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (!r.ok) return;
+    var tb = document.getElementById('approvalMyBody');
+    if (!r.approvals || r.approvals.length === 0) {
+      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mt)">ไม่มีรายการที่ส่ง</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.approvals.map(function(a) {
+      var statusIcon = a.status === 'approved' ? '✅' : (a.status === 'rejected' ? '❌' : '⏳');
+      var statusColor = a.status === 'approved' ? 'var(--gn)' : (a.status === 'rejected' ? 'var(--rd)' : 'var(--gold)');
+      var approver = a.status === 'approved' ? esc(a.approvedBy || '—') : (a.status === 'rejected' ? esc(a.rejectedBy || '—') : '—');
+      return '<tr>' +
+        '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(a.id) + '</td>' +
+        '<td style="color:' + statusColor + '">' + statusIcon + ' ' + esc(a.status) + '</td>' +
+        '<td style="font-size:10px">' + esc(a.submittedAt.substring(0,10)) + '</td>' +
+        '<td class="num">' + (a.docNos ? a.docNos.length : 0) + '</td>' +
+        '<td style="font-family:JetBrains Mono,mono">' + esc(a.period) + '</td>' +
+        '<td style="font-size:10px">' + approver + '</td>' +
+        '</tr>';
+    }).join('');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+  }).getMyApprovalRequests();
+}
+
+function loadPendingApprovals() {
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (!r.ok) { toast('❌ ' + (r.error || 'Error'), 'er'); return; }
+
+    var listEl = document.getElementById('approvalPendingList');
+    var noPendingEl = document.getElementById('approvalNoPending');
+
+    if (!r.approvals || r.approvals.length === 0) {
+      listEl.innerHTML = '';
+      noPendingEl.style.display = 'block';
+      return;
+    }
+    noPendingEl.style.display = 'none';
+
+    listEl.innerHTML = r.approvals.map(function(a) {
+      var docListHtml = (a.docNos || []).map(function(d) {
+        return '<span style="font-family:JetBrains Mono,mono;font-size:10px;background:var(--bg);padding:1px 5px;border-radius:3px;margin:1px 2px;display:inline-block">' + esc(d) + '</span>';
+      }).join('');
+
+      return '<div class="card" style="padding:14px;margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">' +
+        '<div>' +
+        '<div style="font-size:12px;font-weight:500;font-family:JetBrains Mono,mono">' + esc(a.id) + '</div>' +
+        '<div style="font-size:11px;color:var(--mt);margin-top:2px">ส่งโดย: ' + esc(a.submittedBy) + ' เมื่อ ' + esc(a.submittedAt.substring(0,10)) + '</div>' +
+        '<div style="font-size:11px;color:var(--mt)">งวด: <span style="font-family:JetBrains Mono,mono">' + esc(a.period) + '</span></div>' +
+        '<div style="margin-top:6px;font-size:11px"><strong>เอกสาร:</strong> ' + docListHtml + '</div>' +
+        (a.notes ? '<div style="margin-top:4px;font-size:11px;color:var(--mt)"><strong>หมายเหตุ:</strong> ' + esc(a.notes) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">' +
+        '<button class="btn btn-gn btn-sm" onclick="executeApprove(\'' + esc(a.id) + '\')"><i class="bi bi-check-lg"></i> Approve</button>' +
+        '<button class="btn btn-rd btn-sm" onclick="executeReject(\'' + esc(a.id) + '\')"><i class="bi bi-x-lg"></i> Reject</button>' +
+        '</div></div></div>';
+    }).join('');
+    toast('✅ โหลด ' + r.approvals.length + ' รายการรออนุมัติ', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getPendingApprovals();
+}
+
+function executeApprove(requestId) {
+  if (!confirm('✅ อนุมัติ ' + requestId + '?\n\nระบบจะรัน Amortization อัตโนมัติ')) return;
+
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  document.getElementById('resultApproval').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (r.ok) {
+      var amortHtml = '';
+      if (r.amortResult && r.amortResult.ok) {
+        amortHtml = '<div class="al al-ok" style="margin-top:8px"><i class="bi bi-check-circle"></i> Amortization: ' + r.amortResult.scheduleRows + ' rows, ฿' + fmt(r.amortResult.totalAmount) + '</div>';
+      } else if (r.amortResult) {
+        amortHtml = '<div class="al al-er" style="margin-top:8px"><i class="bi bi-x-circle"></i> Amortization: ' + (r.amortResult.error || 'Failed') + '</div>';
+      }
+      showResult('resultApproval', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ✅ ' + esc(r.message) + '</div>' + amortHtml);
+      toast('✅ ' + r.message, 'ok');
+      loadPendingApprovals();
+      updatePendingBadge();
+      loadMyRequests();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      showResult('resultApproval', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).approveRequest(requestId);
+}
+
+function executeReject(requestId) {
+  var reason = prompt('ระบุเหตุผลในการปฏิเสธ ' + requestId + ':');
+  if (reason === null) return;
+  reason = reason.trim();
+
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  document.getElementById('resultApproval').classList.remove('show');
+
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (r.ok) {
+      showResult('resultApproval', '<div class="al al-ok"><i class="bi bi-check-circle"></i> ❌ ' + esc(r.message) + '</div>');
+      toast('❌ ' + r.message, 'ok');
+      loadPendingApprovals();
+      updatePendingBadge();
+    } else {
+      toast('❌ ' + (r.error || 'Error'), 'er');
+      showResult('resultApproval', '<div class="al al-er"><i class="bi bi-x-circle"></i> ' + (r.error || 'Error') + '</div>');
+    }
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).rejectRequest(requestId, reason);
+}
+
+function loadApprovalHistory() {
+  document.getElementById('loaderApproval').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    if (!r.ok || !r.history) { toast('❌ ' + (r.error || 'Error'), 'er'); return; }
+    var tb = document.getElementById('approvalHistoryBody');
+    if (r.history.length === 0) {
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--mt)">ไม่มีประวัติ</td></tr>';
+      return;
+    }
+    tb.innerHTML = r.history.map(function(a) {
+      var statusIcon = a.status === 'approved' ? '✅' : (a.status === 'rejected' ? '❌' : '⏳');
+      var statusColor = a.status === 'approved' ? 'var(--gn)' : (a.status === 'rejected' ? 'var(--rd)' : 'var(--gold)');
+      var approver = a.status === 'approved' ? esc(a.approvedBy || '—') : (a.status === 'rejected' ? esc(a.rejectedBy || '—') : '—');
+      var reason = a.status === 'rejected' ? esc(a.rejectionReason || '') : (a.status === 'approved' && a.amortResult ? 'Amort: ' + (a.amortResult.ok ? '✅' : '❌') : '—');
+      return '<tr>' +
+        '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(a.id) + '</td>' +
+        '<td style="color:' + statusColor + '">' + statusIcon + ' ' + esc(a.status) + '</td>' +
+        '<td style="font-size:10px">' + esc(a.submittedAt.substring(0,10)) + '</td>' +
+        '<td style="font-size:10px">' + esc(a.submittedBy) + '</td>' +
+        '<td class="num">' + (a.docNos ? a.docNos.length : 0) + '</td>' +
+        '<td style="font-family:JetBrains Mono,mono">' + esc(a.period) + '</td>' +
+        '<td style="font-size:10px">' + approver + '</td>' +
+        '<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;font-size:10px">' + reason + '</td>' +
+        '</tr>';
+    }).join('');
+    toast('✅ โหลดประวัติ ' + r.total + ' รายการ', 'ok');
+  }).withFailureHandler(function(e) {
+    document.getElementById('loaderApproval').classList.add('hidden');
+    toast('❌ ' + e.message, 'er');
+  }).getApprovalHistory(100, 0);
 }
 
 </script>

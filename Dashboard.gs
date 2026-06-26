@@ -1,12 +1,16 @@
 // ================= DASHBOARD DATA =================
 function getDashboardData() {
   try {
-    var cacheKey = 'dash_data';
+    var cacheKey = 'dash_v2';
     var cached = CacheService.getScriptCache().get(cacheKey);
     if (cached) {
       var parsed = JSON.parse(cached);
       if (parsed && parsed.trend) return parsed;
     }
+    
+    // Invalidate old cache keys (A1)
+    try { CacheService.getScriptCache().remove('dash_data'); } catch(e) {}
+    try { CacheService.getScriptCache().remove('dashboard_data'); } catch(e) {}
     
     var items = readInputData_();
     var now = new Date();
@@ -17,6 +21,7 @@ function getDashboardData() {
     // --- Accumulators ---
     var trendMap = {};
     var glMap = {};
+    var glNameMap = {};  // A2: track GL name per GL code
     var ioMap = {};
     var ccPeriodMap = {};
     var companyMap = {};
@@ -101,6 +106,9 @@ function getDashboardData() {
           var gl = s.glPrepaid || 'N/A';
           glMap[gl] = (glMap[gl] || 0) + s.amortAmount;
           
+          // A2: track GL name for this GL code
+          if (item.glName && !glNameMap[gl]) glNameMap[gl] = item.glName;
+          
           // IO breakdown (S-11)
           var ioKey = s.io || 'N/A';
           ioMap[ioKey] = (ioMap[ioKey] || 0) + s.amortAmount;
@@ -122,6 +130,7 @@ function getDashboardData() {
       if (datesValid && schedule.length > 0) {
         expiringSoonList.push({
           docNo: item.docNo,
+          docNo2: item.docNo2 || '',
           description: item.description,
           endDate: fmtDate_(end),
           amount: item.amount,
@@ -150,7 +159,7 @@ function getDashboardData() {
     var glKeys = Object.keys(glMap).sort(function(a,b){ return glMap[b] - glMap[a]; });
     var glBreakdown = [];
     for (var g = 0; g < glKeys.length; g++) {
-      glBreakdown.push({gl: glKeys[g], amount: Math.round(glMap[glKeys[g]] * 100) / 100});
+      glBreakdown.push({gl: glKeys[g], glName: glNameMap[glKeys[g]] || '', amount: Math.round(glMap[glKeys[g]] * 100) / 100});
     }
     
     // --- IO breakdown (S-11) ---
@@ -193,6 +202,7 @@ function getDashboardData() {
       var es = expiringSoonList[k];
       expiringSoon.push({
         docNo: es.docNo,
+        docNo2: es.docNo2 || '',
         description: es.description,
         endDate: es.endDate,
         amount: es.amount,

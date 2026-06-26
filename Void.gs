@@ -1,22 +1,73 @@
 // ================= VOID / TERMINATE =================
 
+// Module-level cache for doc details
+var _docDetailCache = {};
+var _docDetailCacheTime = {};
+var _DOC_DETAIL_CACHE_TTL = 60 * 1000; // 60 seconds
+
 /**
  * Get list of all active doc numbers (for dropdown)
+ * Supports optional skip/limit for pagination
+ * @param {number} skip - items to skip (default 0)
+ * @param {number} limit - max items to return (default 0 = all)
  */
-function getDocList() {
+function getDocList(skip, limit) {
   try {
+    skip = Number(skip) || 0;
+    limit = Number(limit) || 0;
     var items = readInputData_();
     var docMap = {};
     for (var i = 0; i < items.length; i++) {
       var doc = items[i].docNo || '';
       if (doc && !docMap[doc]) {
-        docMap[doc] = { docNo: doc, description: items[i].description, plate: items[i].plate };
+        docMap[doc] = { docNo: doc, docNo2: items[i].docNo2 || '', description: items[i].description, plate: items[i].plate };
       }
     }
     var list = [];
     for (var d in docMap) list.push(docMap[d]);
     list.sort(function(a,b){ return a.docNo.localeCompare(b.docNo); });
-    return { ok: true, list: list };
+    var total = list.length;
+    if (limit > 0) {
+      list = list.slice(skip, skip + limit);
+    }
+    return { ok: true, list: list, total: total, hasMore: (skip + list.length) < total };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Get paginated doc list with search
+ * @param {number} skip - items to skip (default 0)
+ * @param {number} limit - items per page (default 50)
+ * @param {string} search - optional search filter
+ * @returns {Object} {items, total, hasMore}
+ */
+function getPagedDocList(skip, limit, search) {
+  try {
+    skip = Number(skip) || 0;
+    limit = Number(limit) || 50;
+    search = (search || '').trim().toLowerCase();
+    var items = readInputData_();
+    var docMap = {};
+    for (var i = 0; i < items.length; i++) {
+      var doc = items[i].docNo || '';
+      if (!doc) continue;
+      // Apply search filter
+      if (search) {
+        var haystack = (doc + ' ' + (items[i].docNo2 || '') + ' ' + (items[i].description || '') + ' ' + (items[i].plate || '')).toLowerCase();
+        if (haystack.indexOf(search) === -1) continue;
+      }
+      if (!docMap[doc]) {
+        docMap[doc] = { docNo: doc, docNo2: items[i].docNo2 || '', description: items[i].description, plate: items[i].plate };
+      }
+    }
+    var list = [];
+    for (var d in docMap) list.push(docMap[d]);
+    list.sort(function(a,b){ return a.docNo.localeCompare(b.docNo); });
+    var total = list.length;
+    var paged = list.slice(skip, skip + limit);
+    return { ok: true, items: paged, total: total, hasMore: (skip + paged.length) < total };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -28,6 +79,11 @@ function getDocList() {
 function getDocDetail(docNo) {
   try {
     if (!docNo) return { ok: false, error: 'กรุณาระบุเลขที่ DOC' };
+    // Module-level cache
+    var now = Date.now();
+    if (_docDetailCache[docNo] !== undefined && (now - (_docDetailCacheTime[docNo] || 0)) < _DOC_DETAIL_CACHE_TTL) {
+      return _docDetailCache[docNo];
+    }
     var items = readInputData_();
     var matched = null;
     for (var i = 0; i < items.length; i++) {
@@ -41,14 +97,18 @@ function getDocDetail(docNo) {
     var remaining = lastRow ? lastRow.remaining : (matched.amount || 0);
     var amortized = lastRow ? lastRow.accumulated : 0;
     
-    return {
+    // Build result and cache it
+    var result = {
       ok: true,
       docNo: matched.docNo,
+      docNo2: matched.docNo2 || '',
       description: matched.description,
       plate: matched.plate,
       io: matched.io,
       glPrepaid: matched.glPrepaid,
+      glName: matched.glName || '',
       costCenter: matched.costCenter,
+      costName: matched.costName || '',
       amount: matched.amount,
       startDate: fmtDate_(matched.startDate),
       endDate: fmtDate_(matched.endDate),
@@ -57,6 +117,9 @@ function getDocDetail(docNo) {
       scheduleRows: fullSchedule.length,
       schedule: fullSchedule.slice(0, 5) // first 5 rows preview
     };
+    _docDetailCache[docNo] = result;
+    _docDetailCacheTime[docNo] = Date.now();
+    return result;
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -221,6 +284,79 @@ function voidPrepaid(params) {
       sheetUrl: ss.getUrl(),
       xlsxUrl: xlsxUrl,
       jeRef: ref
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Batch void multiple prepaid documents
+ * @param {string[]} docList - Array of docNo strings
+ * @param {string} voidDate - Void date (YYYY-MM-DD)
+ * @param {string} type - 'refund' or 'loss'
+ * @param {string} lossGL - Loss GL account (for loss type)
+ * @return {Object} Summary { ok, total, succeeded, failed, results }
+ */
+function batchVoidPrepaid(docList, voidDate, type, lossGL) {
+  try {
+    if (!docList || !Array.isArray(docList) || docList.length === 0) {
+      return { ok: false, error: 'กรุณาระบุรายการเอกสารที่ต้องการ Void' };
+    }
+    type = type || 'refund';
+    lossGL = lossGL || '51990010';
+    voidDate = voidDate || '';
+    
+    var results = [];
+    var succeeded = 0;
+    var failed = 0;
+    
+    for (var i = 0; i < docList.length; i++) {
+      var docNo = docList[i];
+      if (!docNo) continue;
+      
+      try {
+        var result = voidPrepaid({
+          docNo: docNo,
+          voidDate: voidDate,
+          type: type,
+          lossGL: lossGL
+        });
+        
+        if (result.ok) {
+          succeeded++;
+          results.push({
+            docNo: docNo,
+            ok: true,
+            message: result.message,
+            amount: result.amount,
+            jeRef: result.jeRef
+          });
+        } else {
+          failed++;
+          results.push({
+            docNo: docNo,
+            ok: false,
+            error: result.error || 'Unknown error'
+          });
+        }
+      } catch (e) {
+        failed++;
+        results.push({
+          docNo: docNo,
+          ok: false,
+          error: e.message
+        });
+      }
+    }
+    
+    return {
+      ok: succeeded > 0,
+      total: docList.length,
+      succeeded: succeeded,
+      failed: failed,
+      results: results,
+      message: 'Batch Void: ' + succeeded + ' สำเร็จ, ' + failed + ' ล้มเหลว จาก ' + docList.length + ' รายการ'
     };
   } catch (e) {
     return { ok: false, error: e.message };

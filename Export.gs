@@ -15,7 +15,7 @@ function pivotToWideFormat_(longData) {
       var key = r.docNo;
       if (!groups[key]) {
         groups[key] = {
-          docNo: r.docNo, description: r.description || '', io: r.io || '',
+          docNo: r.docNo, docNo2: r.docNo2 || '', description: r.description || '', io: r.io || '',
           glPrepaid: r.glPrepaid || '', plate: r.plate || '',
           costCenter: r.costCenter || '', startDate: '', endDate: '',
           amount: 0, totalDays: 0, ratePerDay: 0,
@@ -33,7 +33,7 @@ function pivotToWideFormat_(longData) {
     }
     
     // Base columns
-    var baseHeaders = ['Doc No', 'รายการ', 'IO', 'GL', 'ทะเบียน', 'Cost Center',
+    var baseHeaders = ['Doc No', 'Doc No 2', 'รายการ', 'IO', 'GL', 'ทะเบียน', 'Cost Center',
       'จำนวนเดือน', 'ยอดรวม', 'ค่าใช้จ่ายสะสม', 'มูลค่าคงเหลือ'];
     var headers = baseHeaders.concat(monthCols);
     
@@ -43,7 +43,7 @@ function pivotToWideFormat_(longData) {
       var g = groups[keys[k]];
       var monthsActive = Object.keys(g.monthly).length;
       var row = [
-        g.docNo, g.description, g.io, g.glPrepaid, g.plate, g.costCenter,
+        g.docNo, g.docNo2, g.description, g.io, g.glPrepaid, g.plate, g.costCenter,
         monthsActive, Math.round(g.amount * 100) / 100,
         Math.round(g.accumulated * 100) / 100, Math.round(g.remaining * 100) / 100
       ];
@@ -115,6 +115,16 @@ function exportWideToSheet(targetPeriod) {
 
 function getWidePreview(targetPeriod) {
   try {
+    // Cache check
+    var cacheKey = 'wide_preview_' + (targetPeriod || 'ALL') + '_v2';
+    try {
+      var cs = CacheService.getScriptCache().get(cacheKey);
+      if (cs) {
+        var parsed = JSON.parse(cs);
+        if (parsed && parsed.ok) return parsed;
+      }
+    } catch(e) {}
+
     var items = readInputData_();
     var allLong = [];
     for (var i = 0; i < Math.min(items.length, 50); i++) { // preview 50 items max
@@ -123,7 +133,7 @@ function getWidePreview(targetPeriod) {
     }
     if (allLong.length === 0) return {ok: false, error: 'No data'};
     var pivot = pivotToWideFormat_(allLong);
-    return {
+    var result = {
       ok: true,
       headers: pivot.headers,
       rows: pivot.rows.slice(0, 20), // preview first 20
@@ -132,6 +142,8 @@ function getWidePreview(targetPeriod) {
       totalRows: pivot.rows.length,
       totalMonths: pivot.monthColumns.length
     };
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), 300); } catch(e) {}
+    return result;
   } catch (e) {
     return {ok: false, error: e.message};
   }
@@ -192,7 +204,7 @@ function generateSAPJE_(scheduleData, params) {
         company: company, docType: docType, postDate: postDate, docDate: docDate,
         ref: ref, currency: currency, lineItem: lineItem,
         glAccount: io, debit: amt, credit: 0,
-        description: String(s.description || '').substring(0, 50),
+        description: String((s.docNo2 ? '[' + s.docNo2 + '] ' : '') + (s.description || '')).substring(0, 50),
         costCenter: s.costCenter || '', io: io, key: '40', taxBranch: '0000'
       });
       totalDebit += amt;
@@ -205,7 +217,7 @@ function generateSAPJE_(scheduleData, params) {
         company: company, docType: docType, postDate: postDate, docDate: docDate,
         ref: ref, currency: currency, lineItem: lineItem,
         glAccount: gl, debit: 0, credit: amt,
-        description: String(s.description || '').substring(0, 50),
+        description: String((s.docNo2 ? '[' + s.docNo2 + '] ' : '') + (s.description || '')).substring(0, 50),
         costCenter: s.costCenter || '', io: io, key: '50', taxBranch: '0000'
       });
       totalCredit += amt;
@@ -232,6 +244,19 @@ function generateSAPJE_(scheduleData, params) {
 
 function exportSAPJE(targetPeriod) {
   try {
+    // Cache check: cache per period, 5 min TTL via CacheService
+    var cacheKey = 'sap_je_' + (targetPeriod || 'ALL') + '_v2';
+    var cached = null;
+    try {
+      var cs = CacheService.getScriptCache().get(cacheKey);
+      if (cs) cached = JSON.parse(cs);
+    } catch(e) {}
+    if (cached && cached.ok) {
+      // Cache hit — but still need to check if data exists
+      Logger.log('exportSAPJE cache hit for ' + cacheKey);
+      return cached;
+    }
+
     var items = readInputData_();
     var allSched = [];
     for (var i = 0; i < items.length; i++) {
@@ -321,7 +346,8 @@ function exportSAPJE(targetPeriod) {
       xlsxUrl = ss.getUrl();
     }
     
-    return {
+    // Cache the result (5 min)
+    var cacheResult = {
       ok: true,
       message: 'สร้าง ' + jeResult.totalDocs + ' เอกสาร (' + jeResult.totalLines + ' บรรทัด) — Dr=' + fmtMoney_(jeResult.totalDebit) + ' = Cr=' + fmtMoney_(jeResult.totalCredit),
       totalDocs: jeResult.totalDocs,
@@ -332,13 +358,139 @@ function exportSAPJE(targetPeriod) {
       xlsxUrl: xlsxUrl,
       sample: jeResult.documents.slice(0, 2)
     };
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(cacheResult), 300); } catch(e) {}
+    return cacheResult;
   } catch (e) {
     return {ok: false, error: e.message};
   }
 }
 
+// ================= BULK SAP JE EXPORT =================
+/**
+ * Get all unique periods available in the input data
+ * @returns {string[]} Array of YYYY-MM period strings
+ */
+function getAvailablePeriods() {
+  try {
+    // Cache check via CacheService
+    var cacheKey = 'avail_periods_v2';
+    try {
+      var cs = CacheService.getScriptCache().get(cacheKey);
+      if (cs) {
+        var parsed = JSON.parse(cs);
+        if (parsed && Array.isArray(parsed)) return parsed;
+      }
+    } catch(e) {}
+
+    var items = readInputData_();
+    var periodSet = {};
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var start = new Date(item.startDate);
+      var end = new Date(item.endDate);
+      if (isNaN(start) || isNaN(end) || start > end) continue;
+      var cur = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (cur <= end) {
+        var y = cur.getFullYear();
+        var m = cur.getMonth() + 1;
+        periodSet[y + '-' + (m < 10 ? '0' : '') + m] = true;
+        cur.setMonth(cur.getMonth() + 1);
+      }
+    }
+    var result = Object.keys(periodSet).sort();
+    // Cache the result (5 min)
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), 300); } catch(e) {}
+    return result;
+  } catch (e) {
+    Logger.log('getAvailablePeriods error: ' + e.message);
+    return [];
+  }
+}
+
+/**
+ * Bulk export SAP JE for multiple periods
+ * @param {string[]} periods - Array of YYYY-MM period strings
+ * @returns {Object} Combined summary
+ */
+function bulkExportSAPJE(periods) {
+  try {
+    if (!periods || !Array.isArray(periods) || periods.length === 0) {
+      return {ok: false, error: 'No periods specified', totalDocs: 0, totalLines: 0, totalDebit: 0, totalCredit: 0, perPeriod: [], succeeded: 0, failed: 0};
+    }
+    
+    var totalDocs = 0, totalLines = 0, totalDebit = 0, totalCredit = 0;
+    var perPeriod = [];
+    var succeeded = 0, failed = 0;
+    
+    for (var i = 0; i < periods.length; i++) {
+      var period = periods[i];
+      try {
+        var result = exportSAPJE(period);
+        perPeriod.push({
+          period: period,
+          ok: result.ok,
+          docs: result.ok ? result.totalDocs : 0,
+          lines: result.ok ? result.totalLines : 0,
+          debit: result.ok ? result.totalDebit : 0,
+          credit: result.ok ? result.totalCredit : 0,
+          error: result.ok ? '' : (result.error || 'Unknown error'),
+          sheetUrl: result.ok ? result.sheetUrl : '',
+          xlsxUrl: result.ok ? result.xlsxUrl : ''
+        });
+        if (result.ok) {
+          succeeded++;
+          totalDocs += result.totalDocs || 0;
+          totalLines += result.totalLines || 0;
+          totalDebit += result.totalDebit || 0;
+          totalCredit += result.totalCredit || 0;
+        } else {
+          failed++;
+        }
+      } catch (e) {
+        perPeriod.push({
+          period: period,
+          ok: false,
+          docs: 0,
+          lines: 0,
+          debit: 0,
+          credit: 0,
+          error: e.message,
+          sheetUrl: '',
+          xlsxUrl: ''
+        });
+        failed++;
+      }
+    }
+    
+    return {
+      ok: succeeded > 0,
+      message: 'Bulk export: ' + succeeded + ' succeeded, ' + failed + ' failed — ' + totalDocs + ' docs, ' + totalLines + ' lines',
+      totalDocs: totalDocs,
+      totalLines: totalLines,
+      totalDebit: Math.round(totalDebit * 100) / 100,
+      totalCredit: Math.round(totalCredit * 100) / 100,
+      perPeriod: perPeriod,
+      succeeded: succeeded,
+      failed: failed
+    };
+  } catch (e) {
+    Logger.log('bulkExportSAPJE error: ' + e.message);
+    return {ok: false, error: e.message, totalDocs: 0, totalLines: 0, totalDebit: 0, totalCredit: 0, perPeriod: [], succeeded: 0, failed: 0};
+  }
+}
+
 function getSAPJEPreview(targetPeriod) {
   try {
+    // Cache check
+    var cacheKey = 'sap_je_preview_' + (targetPeriod || 'ALL') + '_v2';
+    try {
+      var cs = CacheService.getScriptCache().get(cacheKey);
+      if (cs) {
+        var parsed = JSON.parse(cs);
+        if (parsed && parsed.ok) return parsed;
+      }
+    } catch(e) {}
+
     var items = readInputData_();
     var allSched = [];
     for (var i = 0; i < Math.min(items.length, 30); i++) { // preview 30 items
@@ -350,12 +502,14 @@ function getSAPJEPreview(targetPeriod) {
     var settings = {company:'1022', docType:'SA', currency:'THB', prepaidGL:'11370010', maxLinesPerJE:900};
     var jeResult = generateSAPJE_(allSched, settings);
     
-    return {
+    var result = {
       ok: true,
       sample: jeResult.documents.slice(0, 3),
       totalDocs: '~' + Math.ceil(allSched.length / (CONFIG.MAX_LINES_PER_JE / 2)),
       totalLines: jeResult.totalLines
     };
+    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(result), 300); } catch(e) {}
+    return result;
   } catch (e) {
     return {ok: false, error: e.message};
   }

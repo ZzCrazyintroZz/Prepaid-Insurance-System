@@ -4,8 +4,10 @@
  * Run pre-upload validation checks on input data
  * @param {string} targetPeriod - optional YYYY-MM filter
  */
-function runPreUploadCheck(targetPeriod) {
+function runPreUploadCheck(targetPeriod, skip, limit) {
   try {
+    skip = Number(skip) || 0;
+    limit = Number(limit) || 0;
     var items = readInputData_();
     if (items.length === 0) return { ok: false, error: 'No data found' };
     
@@ -111,6 +113,16 @@ function runPreUploadCheck(targetPeriod) {
     if (errors.length > 0) status = 'FAIL';
     else if (warnings.length > 0) status = 'WARN';
     
+    // Apply pagination to errors/warnings if skip/limit specified
+    var allErrors = errors;
+    var allWarnings = warnings;
+    var errorTotal = errors.length;
+    var warningTotal = warnings.length;
+    if (limit > 0) {
+      errors = errors.slice(skip, skip + limit);
+      warnings = warnings.slice(skip, skip + limit);
+    }
+    
     return {
       ok: true,
       status: status,
@@ -118,8 +130,10 @@ function runPreUploadCheck(targetPeriod) {
       validItems: validItems,
       errors: errors,
       warnings: warnings,
-      errorCount: errors.length,
-      warningCount: warnings.length,
+      errorCount: errorTotal,
+      warningCount: warningTotal,
+      errorTotal: errorTotal,
+      warningTotal: warningTotal,
       totalAmount: Math.round(totalAmount * 100) / 100,
       amortCheck: amortCheck,
       timestamp: new Date().toISOString()
