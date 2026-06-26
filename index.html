@@ -4,7 +4,7 @@
   <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prepaid Expense Amortization System</title>
+  <title>Amort — Prepaid Expense Amortization System</title>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&family=DM+Serif+Display:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
@@ -14,7 +14,9 @@
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Prompt',sans-serif;background:var(--bg);color:var(--tx);transition:background .25s,color .25s}
     header{height:52px;display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--sf);border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:100}
-    .h-icon{width:28px;height:28px;border-radius:5px;background:rgba(201,169,110,.10);border:1px solid rgba(201,169,110,.22);display:flex;align-items:center;justify-content:center;font-size:13px}
+    .h-logo{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+    .h-logo:hover .h-icon{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.16)}
+    .h-icon{width:28px;height:28px;border-radius:5px;background:rgba(201,169,110,.10);border:1px solid rgba(201,169,110,.22);display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
     .h-name{font-family:'DM Serif Display',serif;font-size:15px;color:var(--tx)}
     .h-sub{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.10em}
     .sp{flex:1}
@@ -76,8 +78,16 @@
 </head>
 <body>
 <header>
-  <div class="h-icon">📊</div>
-  <div><div class="h-name">Prepaid Amort</div><div class="h-sub">Cut-off System</div></div>
+  <div class="h-logo" onclick="switchTab('dashboard')" title="กลับหน้า Dashboard">
+    <div class="h-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div><div class="h-name" id="headerTitle">Amort</div><div class="h-sub">Prepaid Expense Amortization System</div></div>
+  </div>
   <div class="sp"></div>
   <span class="chip" onclick="toggleDark()" title="Dark/Light"><i class="bi bi-moon-stars" id="darkIcon"></i></span>
   <span class="chip" id="statusChip"><span class="dot" id="statusDot"></span><span id="statusTxt">—</span></span>
