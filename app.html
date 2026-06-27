@@ -1031,6 +1031,8 @@ function saveSettings(){
   };
   google.script.run.withSuccessHandler(function(r){
     if(r.ok){toast('✅ Settings saved','ok')}else{toast('❌ '+r.error,'er')}
+  }).withFailureHandler(function(e){
+    toast('❌ Save failed: '+e.message,'er');
   }).saveSettings(settings);
 }
 
@@ -1913,8 +1915,10 @@ function saveEmailConfig(){
   };
   if (!config.recipients) { toast('❌ กรุณากรอกอีเมลผู้รับ','er'); return; }
   google.script.run.withSuccessHandler(function(r){
-    if(r.ok){ toast('✅ Email config saved','ok'); }else{ toast('❌ '+r.error,'er'); }
-  }).saveEmailConfig(config);
+    if(r.ok){toast('✅ Dashboard config saved','ok');loadDashboard()}else{toast('❌ '+r.error,'er')}
+  }).withFailureHandler(function(e){
+    toast('❌ Save failed: '+e.message,'er');
+  }).saveDashboardConfig(cfg);
 }
 
 function sendTestEmail(){
@@ -2230,40 +2234,7 @@ function highlightRowA3(row,query){
   });
 }
 
-// --- A3: FILTER EXPORT (honours visible rows for CSV) ---
-var _origExportCSV=exportTableCSV;
-function exportTableCSV(tableId,filename){
-  var table=document.getElementById(tableId);
-  if(!table){toast('Table not found','er');return;}
-  var rows=[];
-  var hRow=table.querySelector('thead tr');
-  if(hRow){
-    rows.push(Array.from(hRow.querySelectorAll('th')).map(function(th){
-      return '"'+th.textContent.trim().replace(/[↑↓]/g,'').replace(/"/g,'""')+'"';
-    }).join(','));
-  }
-  var hasData=false;
-  Array.from(table.querySelectorAll('tbody tr')).forEach(function(tr){
-    if(tr.style.display==='none')return; // Skip filtered-out rows
-    var cells=tr.querySelectorAll('td');
-    if(!cells.length||(cells.length===1&&cells[0].colSpan>1))return;
-    hasData=true;
-    rows.push(Array.from(cells).map(function(td){
-      return '"'+td.textContent.trim().replace(/"/g,'""')+'"';
-    }).join(','));
-  });
-  if(!hasData){toast('No visible data to export','er');return;}
-  var csv='\ufeff'+rows.join('\n');
-  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  a.href=url;a.download=filename+'.csv';
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  toast('✅ Downloaded '+filename+'.csv','ok');
-}
-
-// --- A4: SORTABLE COLUMNS ---
+// --- A3: SORTABLE COLUMNS ---
 var _sortState = {};
 document.getElementById('ct').addEventListener('click', function(e) {
   var th = e.target.closest('.tb th');
@@ -2784,10 +2755,12 @@ function showRbDetailPanel(detail) {
 document.addEventListener('paginate', function(e) {
   var section = e.detail.section;
   if (section === 'void') {
-    // Re-load batch void docs with new page
     loadBatchVoidDocs();
   } else if (section === 'checker') {
     runChecker();
+  } else if (section === 'amort') {
+    // Re-render amort table with new page - data cached on backend
+    runAmort();
   }
 });
 
@@ -4257,7 +4230,7 @@ function renderGLBalanceTable() {
       '<td class="num"><input class="fi" type="number" step="0.01" style="max-width:140px;font-size:11px;padding:4px 8px;text-align:right;font-family:JetBrains Mono,mono" ' +
       'id="glb_' + esc(r.glCode) + '" value="' + r.balance + '" onchange="updateGLReconTotals()" onkeyup="updateGLReconTotals()"></td>' +
       '<td style="text-align:center">' +
-      '<button class="btn btn-ghost btn-sm" onclick="removeGLRow(\\'' + esc(r.glCode) + '\\')" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td></tr>';
+      '<button class="btn btn-ghost btn-sm" onclick="removeGLRow(\'' + esc(r.glCode) + '\')" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td></tr>';
   }
   
   tbody.innerHTML = html;
@@ -4298,7 +4271,7 @@ function addGLBalanceRow() {
     '<td class="num"><input class="fi" type="number" step="0.01" style="max-width:140px;font-size:11px;padding:4px 8px;text-align:right;font-family:JetBrains Mono,mono" ' +
     'id="glb_' + esc(glCode) + '" value="0" onchange="updateGLReconTotals()" onkeyup="updateGLReconTotals()"></td>' +
     '<td style="text-align:center">' +
-    '<button class="btn btn-ghost btn-sm" onclick="this.closest(\\'tr\\').remove();updateGLReconTotals()" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td>';
+    '<button class="btn btn-ghost btn-sm" onclick="this.closest(\'tr\').remove();updateGLReconTotals()" style="padding:2px 6px;font-size:10px;color:var(--rd)">✕</button></td>';
   tbody.appendChild(tr);
   updateGLReconTotals();
 }
