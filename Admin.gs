@@ -41,7 +41,7 @@ function getUserGuideData() {
       ok: true,
       system: {
         name: 'Prepaid Expense Amortization System (Amort)',
-        version: 'v32 (Phase A-C7: Quick Wins → Budget → GL Recon → Import)',
+        version: 'v34 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
         runtime: 'Google Apps Script (V8)',
         webApp: true
       },
@@ -76,159 +76,173 @@ function getUserGuideData() {
           desc: 'ใช้เก็บ Wide Format Pivot, SAP JE, และ Void JE'
         }
       ],
+      // Performance: module-level cache (60s) + CacheService (5 min)
+      // Pagination: 50 items/page
       tabs: [
         {
           id: 'dashboard',
           icon: '📈',
           name: 'Dashboard',
-          desc: 'ภาพรวมระบบ: 15 KPIs (Active/Month End/Running Balance/Actual vs Budget), 7 Charts (Trend, GL Pie, Top 10, Running Balance)',
-          howto: 'เปิดหน้าแรกมาแสดงอัตโนมัติ — กดปุ่ม ⚙️ เพื่อปรับแต่ง KPI ที่แสดง, กด Dark Mode toggle (พระจันทร์/พระอาทิตย์)',
-          dataSource: 'คำนวณจาก CacheService (refresh อัตโนมัติทุก 5 นาที) + ข้อมูลงบประมาณจาก Budget tab'
+          desc: 'ภาพรวมระบบ: 15 KPIs (Active Items, Month-End Closed, Running Balance, Actual vs Budget, MoM Change), 7 Charts (Monthly Trend, GL Pie, Top 10 by Amount, Running Balance, Budget vs Actual, Monthly Amortization, Status Breakdown)',
+          howto: 'เปิดหน้าแรกมาแสดงอัตโนมัติ — KPI Row 1: Total Items, Total Amount, Current Period, Status. KPI Row 2: Active Items, Completed Items, Total Remaining, Avg Duration, Expiring This Month, MoM Change. Dashboard Config (⚙️): เลือก KPI ที่แสดง ปรับ Theme สลับ Dark/Light (พระจันทร์/พระอาทิตย์). คลิกที่ Chart เพื่อดู Drill-Down รายละเอียด',
+          dataSource: 'CacheService (refresh อัตโนมัติทุก 5 นาที) + ข้อมูลงบประมาณจาก Budget tab'
         },
         {
           id: 'amort',
           icon: '🚀',
           name: 'Amortization',
-          desc: 'คำนวณค่าใช้จ่ายตัดจ่ายรายเดือนแบบ Average Per Day — รองรับทีละงวดหรือหลายงวดพร้อมกัน (Multi-Period)',
-          howto: 'กรอก YYYY-MM หรือเลือกช่วง Start-End Month → กด Run → ดูผล KPI และตาราง Schedule',
-          formula: 'Rate/Day = Amount / TotalDays → Amort/Month = DaysInMonth × Rate/Day → ปัดเศษ 4 ตำแหน่ง',
-          dataSource: 'อ่านจาก Input Sheet Columns M (Start), N (End), O (Amount)'
+          desc: 'คำนวณค่าใช้จ่ายตัดจ่ายรายเดือนแบบ Average Per Day — รองรับทั้งทีละงวด (Single Period) และหลายงวดพร้อมกัน (Multi-Period B2)',
+          howto: 'Single Period: กรอก YYYY-MM — กด Run — ดูผล KPI และตาราง Schedule. Multi-Period (B2): เปิด toggle Bulk Mode → เลือก Start Month และ End Month → กด Run → ระบบคำนวณทีละหลายงวด. Pagination 50 รายการ/หน้า. ปุ่ม Export to Sheet เพื่อเขียน Wide Format',
+          formula: 'Rate/Day = Amount ÷ TotalDays • Amort/Month = DaysInMonth × Rate/Day (ปัดเศษ 4 ตำแหน่ง หรือ Full Precision ตาม Settings)',
+          dataSource: 'อ่านจาก Input Sheet Columns M (Start), N (End), O (Amount) • Cache Amortization Engine'
         },
         {
           id: 'schedule',
           icon: '📅',
           name: 'Schedule (Wide Format)',
-          desc: 'ตารางตัดจ่ายแบบ Wide Format — 1 แถว/รายการ, คอลัมน์เดือนละ column มีสีฟ้า 🟦',
-          howto: 'กรอกงวด → Preview → Export to Sheet เพื่อเขียนไปยัง SAP Template Sheet',
-          dataSource: 'คำนวณจาก Amortization Engine แล้ว Pivot เป็น Wide Format'
+          desc: 'ตารางตัดจ่ายแบบ Wide Format — 1 แถว/รายการ DOC No, คอลัมน์เดือนละ column, มีสีฟ้า 🟦 แสดงเฉพาะเดือนที่มีค่าใช้จ่าย',
+          howto: 'กรอกงวด (YYYY-MM หรือว่าง = ทั้งหมด) → กด Preview → ดูตาราง Wide Format พร้อม Pagination → กด Export to Sheet เพื่อเขียนไปยัง SAP Template Sheet',
+          dataSource: 'คำนวณจาก Amortization Engine → Pivot → Wide Format โดยใส่ DOC No, Description, GL, และยอดรายเดือนแยกคอลัมน์'
         },
         {
           id: 'crud',
           icon: '✏️',
           name: 'Prepaid (CRUD)',
-          desc: 'จัดการข้อมูล Prepaid: เพิ่ม, แก้ไข, ลบรายการ — ค้นหาและแบ่งหน้าจอ 50 รายการ/หน้า',
-          howto: 'ค้นหา Doc No → แก้ไขรายการใน Modal → Delete พร้อมยืนยัน → ข้อมูลอัปเดตทันที',
-          note: 'การแก้ไข/ลบ จะล้าง Cache อัตโนมัติเพื่อให้ Dashboard แสดงข้อมูลล่าสุด'
+          desc: 'จัดการข้อมูล Prepaid ครบวงจร: เพิ่ม (Add), แก้ไข (Edit), ลบ (Delete) — ค้นหา/กรอง + Pagination 50 รายการ + Modal ยืนยัน',
+          howto: 'Add Record: กรอกรายละเอียดใน Modal → Save → ระบบ generate Doc No อัตโนมัติ. Edit: คลิก Edit→ แก้ไขข้อมูล → Save → เปรียบเทียบ Old vs New. Delete: คลิก Delete → ยืนยันอีกครั้ง → ระบบลบรายการ + ล้าง Cache',
+          note: 'แก้ไข/ลบ → ล้าง CacheService + Module Cache อัตโนมัติ • Dashboard สะท้อนข้อมูลล่าสุดทันที • บันทึก Audit Log ทุกรายการ'
         },
         {
           id: 'budget',
           icon: '💰',
           name: 'Budget vs Actual',
-          desc: 'ตั้งงบประมาณรายงวด และเปรียบเทียบกับยอดตัดจ่ายจริงแยกตาม GL/Cost Center',
-          howto: 'เลือกงวด YYYY-MM → Add Row กรอกงบประมาณ → Save → View vs Actual เพื่อดูเปรียบเทียบ',
-          note: 'Variance = Budget - Actual • แสดงสีเขียวเมื่องบไม่เกิน, แดงเมื่องบเกิน'
+          desc: 'ตั้งงบประมาณรายงวดและเปรียบเทียบกับยอดตัดจ่ายจริง — แยกตาม GL/Cost Center รองรับ Dashboard KPI เชื่อมโยง',
+          howto: 'เลือกงวด YYYY-MM → Add Row → กรอก GL, Cost Center, งบประมาณ → Save. View vs Actual: กดปุ่ม → ตารางเปรียบเทียบ Budget/Actual/Variance/% การใช้ — แสดงทั้งตารางรวมและแยก GL',
+          note: 'Variance = Budget - Actual • สีเขียว ≤ Budget, สีแดง > Budget (Overshoot) • ข้อมูลเชื่อมกับ Dashboard KPI Actual vs Budget'
         },
         {
           id: 'sync',
           icon: '🔄',
           name: 'Sync Data',
-          desc: 'Data source synchronization — ดูสถานะ Sheet ID, จำนวน records, last sync + Quick Import CSV',
-          howto: 'เปิดหน้า Sync Data → ดูสถานะ → กด Sync Now เพื่อล้าง Cache และรีเฟรชข้อมูล',
-          dataSource: 'อ่านจาก Input Sheet และ CacheService'
+          desc: 'Data Source Synchronization — ตรวจสอบสถานะ Connection, จำนวน Records, Last Sync Timestamp, Quick Import CSV',
+          howto: 'เปิดหน้า → ดูสถานะ (Sheet ID, Records 3,979, Last Sync, Online Indicator) → กด Sync Now เพื่อ Invalidate Cache + รีเฟรชข้อมูลจาก Input Sheet → ใช้ Quick Import CSV เพื่ออัปโหลดข้อมูลทีละน้อย',
+          dataSource: 'อ่านจาก Input Sheet (payment system) ผ่าน CacheService + module-level cache 60s'
         },
         {
           id: 'import',
           icon: '📥',
           name: 'Import CSV/Excel',
-          desc: 'นำเข้าข้อมูลจาก CSV หรือ Excel (วางข้อความ) — ระบบจับคู่คอลัมน์อัตโนมัติ รองรับภาษาไทย/อังกฤษ',
-          howto: 'วางข้อมูลจาก Excel → Preview → ตรวจสอบ Column Mapping → Import → ดูประวัติการนำเข้า',
-          note: '15 system fields จับคู่อัตโนมัติ • รองรับ comma/tab • validate ข้อมูลก่อนนำเข้า'
+          desc: 'นำเข้าข้อมูลจาก CSV หรือ Excel (Paste Text) — จับคู่คอลัมน์อัตโนมัติ 15 ฟิลด์ (TH/EN), ตรวจสอบความถูกต้องก่อนนำเข้า',
+          howto: 'วางข้อมูลจาก Excel/CSV → กด Preview → ตรวจสอบ Column Mapping อัตโนมัติ (จับคู่ชื่อฟิลด์ไทย/อังกฤษ) → ยืนยัน Import → ดู Import History พร้อม Timestamp + Record Count',
+          note: '15 system fields จับคู่อัตโนมัติ • รองรับ comma/tab delimiter • Validate ข้อมูลก่อน Import (check วันที่, ตัวเลข, ฟิลด์บังคับ) • เก็บประวัติใน Import History log'
         },
         {
           id: 'sap',
           icon: '📤',
           name: 'SAP Generator',
-          desc: 'สร้าง SAP Journal Entry — Debit Key 40 = IO, Credit Key 50 = GL, สูงสุด 900 บรรทัด/เอกสาร',
-          howto: 'กรอกงวด → Preview → Generate & Export → เปิด Sheet หรือ Download .xlsx — หรือใช้ Bulk Export เพื่อส่ง Export หลายงวดพร้อมกัน',
-          note: 'Dr = Cr ทุกเอกสาร • ใช้ Company/DocType/Currency จาก Settings • Bulk Export รองรับทีละหลายงวด'
+          desc: 'สร้าง SAP Journal Entry — Debit Key 40 = IO, Credit Key 50 = GL, สูงสุด 900 บรรทัด/เอกสาร (Batching อัตโนมัติ)',
+          howto: 'Single: กรอกงวด → Preview (พร้อม Pagination) → Generate & Export → เปิด Sheet หรือ Download .xlsx. Bulk (B7): เปิด Bulk Export → เลือกหลายงวดจาก Checkbox → Preview ทีละงวด → Export พร้อมกัน (Error Isolation: งวดไหน Error ไม่กระทบงวดอื่น). Settings ควบคุม Company, DocType, Currency',
+          note: 'Dr = Cr ทุกเอกสาร • Batching สร้างเอกสารละ 900 บรรทัด (MAX_LINES_PER_JE) • Bulk Export พร้อมผลรวม Docs/Lines/Debit/Credit/Rows'
         },
         {
           id: 'checker',
           icon: '🔍',
           name: 'Pre-Upload Checker',
-          desc: 'ตรวจสอบความถูกต้องของข้อมูลก่อน Export SAP — 10 รายการตรวจสอบ',
-          howto: 'กด Run Check → ดูผล PASS/FAIL → ถ้ามี Error ต้องแก้ไขก่อน Export',
-          checks: ['Doc No ครบ', 'Doc No ซ้ำ', 'IO ครบ', 'GL ครบ','วันที่เริ่มต้นครบ', 'วันที่สิ้นสุดครบ', 'Start ≤ End','วันที่สิ้นสุดผ่านไปแล้ว (Warning)', 'ยอดเงิน > 0','Amortization Sample Check']
+          desc: 'ตรวจสอบความถูกต้องของข้อมูลก่อน Export SAP — 10 รายการตรวจสอบแบบละเอียด พร้อม Cache Result 5 นาที',
+          howto: 'กด Run Check → ดูผลทีละรายการ (PASS ✅ / WARN ⚠️ / FAIL ❌) → Pagination 50 รายการ → ถ้ามี Error ต้องแก้ไขหรือลบข้อมูลผิดปกติก่อน Export SAP',
+          checks: ['Doc No ครบ', 'Doc No ซ้ำ', 'IO ครบ', 'GL ครบ', 'วันที่เริ่มต้นครบ', 'วันที่สิ้นสุดครบ', 'Start ≤ End', 'วันที่สิ้นสุดผ่านไปแล้ว (Warning)', 'ยอดเงิน > 0', 'Amortization Sample Check']
         },
         {
           id: 'glrecon',
           icon: '📊',
           name: 'GL Reconciliation',
-          desc: 'เปรียบเทียบ GL Balance จาก SAP กับยอดตัดจ่ายในระบบ — สีเขียว ≤1%, เหลือง 1-5%, แดง >5%',
-          howto: 'เลือกงวด → โหลด GL accounts → กรอก GL Balance → Save → Run Reconciliation → Export Report',
-          note: 'ระบบโหลด GL ทั้งหมดจากข้อมูลตัดจ่าย • สร้างประวัติ Reconciliation ทุกครั้ง'
+          desc: 'เปรียบเทียบ GL Balance (จาก SAP) กับยอดตัดจ่ายสะสมในระบบ — สีเขียว ≤1% diff, เหลือง 1-5%, แดง >5%',
+          howto: 'เลือกงวด YYYY-MM → กด Load GL Accounts เพื่อดึง GL ทั้งหมด → กรอก GL Balance จาก SAP → Save → กด Run Reconciliation → ดูตารางเปรียบเทียบ (System Balance, GL Balance, Diff, %, Status) → Export Report (.xlsx)',
+          note: 'ระบบโหลด GL ทั้งหมดจากข้อมูลตัดจ่าย • Reconciliation History เก็บทุกรอบ • รองรับ Export Report แยกตามสถานะ (OK/Warning/Error)'
         },
         {
           id: 'void',
           icon: '⛔',
           name: 'Void / Terminate',
-          desc: 'ยกเลิกสัญญากลางคัน — รองรับยกเลิกทีละหลายรายการ (Batch Void) + Refund/Loss',
-          howto: 'เลือก Doc No(s) → ดู KPI Amount/Amortized/Remaining → เลือกประเภท (Full Refund/Partial Refund/Loss) → Preview → Execute Void',
-          types: ['Refund: Dr = GL (Key 40), Cr = IO (Key 50) (คืนเงิน)','Loss: Dr = Loss GL (Key 50), Cr = IO (Key 40) (ตัดสูญ)'],
-          output: 'สร้าง Sheet VOID_JE_xxxx + .xlsx + บันทึก Log ใน _VOID_LOG'
+          desc: 'ยกเลิกสัญญากลางคัน — รองรับทั้งทีละรายการและทีละหลายรายการ (Batch Void B3) + Refund/Loss พร้อมการปรับเปลี่ยนรายการ (Deferral Modify B4)',
+          howto: 'Void ทีละรายการ: เลือก Doc No → ดู KPI (Amount/Amortized/Remaining) → เลือกประเภท (Full Refund/Partial Refund/Loss) → กำหนด Void Date/Loss GL → Preview → Execute. Batch Void (B3): ค้นหา/เลือกหลาย Doc No จาก Checkbox → Preview Batch → Execute ทีเดียวทุกรายการ (Error Isolation). Modify (B4): แก้ไข Start Date/End Date/Amount → ดู Old vs New เปรียบเทียบ → Save',
+          types: ['Refund: Dr = GL (Key 40), Cr = IO (Key 50) (คืนเงิน)', 'Loss: Dr = Loss GL (Key 50), Cr = IO (Key 40) (ตัดสูญ)'],
+          output: 'สร้าง Sheet VOID_JE_xxxx + .xlsx + บันทึก Log ใน _VOID_LOG • ประวัติแก้ไขใน Audit Log'
         },
         {
           id: 'periodclose',
           icon: '🔒',
           name: 'Period-Close',
-          desc: 'ปิดงวดบัญชี — ตรวจสอบ Checklist 4 รายการ (Checker, Amortization, SAP JE, Void) ก่อนปิดงวด',
-          howto: 'เลือกงวด → Run Checklist → ดูสถานะ ✅/❌ → Close Period → เปิดใหม่ได้ด้วย Reopen',
-          note: 'สามารถเพิ่มหมายเหตุประกอบการปิดงวด • ประวัติการปิด/เปิดเก็บใน ScriptProperties'
+          desc: 'ปิดงวดบัญชี — ตรวจสอบ Checklist 4 รายการ (Checker ✅ → Amortization 🚀 → SAP JE 📤 → Void ⛔) ก่อนปิดงวด พร้อมสถานะทีละรายการ',
+          howto: 'เลือกงวด YYYY-MM → กด Run Checklist → ดูสถานะรายการ (✅ Done / ⏳ Pending / ❌ Error) → ถ้าทุกรายการ ✅ → กด Close Period → บันทึกหมายเหตุประกอบ → เปิดงวดใหม่ได้ด้วย Reopen',
+          note: 'ประวัติการปิด/เปิดเก็บใน ScriptProperties • หมายเหตุประกอบการปิดงวด • รองรับ Reopen เมื่องวดต้องการแก้ไข'
         },
         {
           id: 'approvals',
           icon: '✅',
           name: 'Approvals',
-          desc: 'ระบบอนุมัติ — ส่งขออนุมัติรายการยกเลิก, อนุมัติ/ปฏิเสธ, พร้อมดำเนินการอัตโนมัติ',
-          howto: 'เลือก Doc No(s) → Submit Request → ผู้มีสิทธิ์ Approve หรือ Reject → ระบบดำเนินการอัตโนมัติเมื่อ Approve',
-          note: 'ดูประวัติการอนุมัติย้อนหลัง • แสดง Badge จำนวน pending request'
+          desc: 'ระบบอนุมัติการดำเนินการ (ยกเลิก/แก้ไข) — Submit → Approve/Reject → Auto-Execute เมื่อ Approve พร้อมประวัติและ Badge แจ้งเตือน',
+          howto: 'Submit Tab: เลือก Doc No(s) → กรอกหมายเหตุ → Submit Request. Pending Tab: ดูรายการรออนุมัติ → Approve (ดำเนินการอัตโนมัติ) หรือ Reject (พร้อมเหตุผล). History Tab: ดูประวัติทั้งหมด (Approved/Rejected) พร้อม Timestamp และผู้ดำเนินการ',
+          note: 'Badge แสดงจำนวน Pending Requests บนเมนู • Auto-Execute เมื่อ Approve: ดำเนินการ Void/Amort ตามที่ขอ • ประวัติย้อนหลังทั้งหมด'
         },
         {
           id: 'settings',
           icon: '⚙️',
           name: 'Settings',
-          desc: 'ตั้งค่าระบบ: Company, Prepaid GL, Doc Type, Currency, Max Lines/JE, วิธีปัดเศษ',
-          howto: 'แก้ไขค่า → กด Save — ค่าจะถูกบันทึกใน Script Properties'
+          desc: 'ตั้งค่าระบบครบวงจร: Company Code, Prepaid GL Account, Document Type, Currency, Max Lines/JE (900), Rounding Method (4dec/full), SAP Template ID',
+          howto: 'แก้ไขค่าในฟิลด์ → กด Save → บันทึกใน Script Properties (persist ข้าม session). ค่าที่ตั้ง: Company (1022), DocType (KR), Prepaid GL (51990010), Currency (THB), Max Lines/JE (900), Rounding (4dec)',
+          note: 'ค่าถูกบันทึกใน Script Properties • มีผลทันทีที่ Save • ไม่ต้อง Redeploy เพื่อเปลี่ยนค่า'
         },
         {
           id: 'admin',
           icon: '🛠️',
           name: 'Admin Console',
-          desc: 'System administration — System Info, Cache Management, Auto-Run Trigger, Email Notifications',
-          howto: 'ตั้งค่า Auto-Run Trigger (วันที่ N ของเดือน) • ตั้งค่า Email recipients • Clear Cache • ดู System Info',
-          note: 'Auto-Run: ตั้งค่าครั้งเดียว ระบบจะตัดจ่ายอัตโนมัติทุกสิ้นเดือน • Email: ส่งรายงานหลัง Auto-Run หรือ Weekly Expiration Alert'
+          desc: 'System Administration — System Info, Cache Management, Auto-Run Trigger (B1), Email Notifications (B6)',
+          howto: 'System Info: ดู Version, Runtime, Script ID. Cache Management: กด Clear Cache (ล้าง CacheService + Module Cache). Auto-Run (B1): เปิด/ปิด Monthly Trigger → ตั้งวันที่ของเดือน (1-28) → ระบบตัดจ่ายอัตโนมัติวันนั้นทุกเดือน. Email (B6): ตั้ง Recipients → ทดสอบส่ง → เปิด/ปิด Monthly Report / Weekly Expiration Alert',
+          note: 'Auto-Run: ใช้ Time-driven Trigger สัปดาห์ละครั้ง + ตรวจสอบวันที่ • Email: ส่งรายงานหลัง Auto-Run เป็น .xlsx • Weekly Alert: รายการที่จะหมดอายุใน 30 วัน'
         },
         {
           id: 'audit',
           icon: '📋',
           name: 'Audit Log',
-          desc: 'System activity log — tracks actions like sync, import, cache clear, void, approval, and system events',
-          howto: 'เปิดหน้า Audit Log → ดูตาราง Timestamp/Action/Detail'
+          desc: 'System Activity Log — บันทึกการดำเนินการทั้งหมด: Sync, Import, Cache Clear, Void, Approval, CRUD, Settings Change, Period Close',
+          howto: 'เปิดหน้า → ดูตาราง Timestamp/Action/Detail/User — เรียงตามเวลาล่าสุด รองรับ Pagination',
+          dataSource: 'บันทึกใน Audit Sheet ของ SAP Template • actions tracked: sync, import, cache_clear, void, void_batch, approve, reject, crud_add, crud_edit, crud_delete, settings_save, period_close, period_reopen, email_test, trigger_setup'
         },
         {
           id: 'guide',
           icon: '📖',
           name: 'User Guide',
-          desc: 'คู่มือการใช้งานระบบ — เอกสารอ้างอิงการทำงานทุกฟีเจอร์',
-          howto: 'อ่านรายละเอียดแต่ละ Tab ได้จากหน้านี้'
+          desc: 'คู่มือการใช้งานระบบฉบับสมบูรณ์ — อธิบายทุกฟีเจอร์ ทุก Tab พร้อม Data Source และ Step-by-Step',
+          howto: 'อ่านรายละเอียดแต่ละ Tab ที่แสดงในหน้านี้ • ข้อมูลระบบ, ข้อมูลนำเข้า, คำอธิบายแต่ละ Tab, Technical Notes'
         }
       ],
       techNotes: [
         'Amortization: Average Per Day — Rate/Day = Amount ÷ (EndDate - StartDate + 1 วัน)',
         'Rounding: เลือกได้ใน Settings — ปัด 4 ตำแหน่ง (4dec) หรือ เต็มความละเอียด (full)',
         'SAP JE: Debit Key 40 = IO Column (H), Credit Key 50 = GL Column (I)',
-        'Batching: สูงสุด 900 Lines/JE Document — สร้างหลาย Document อัตโนมัติ (SAP JE + Void)',
-        'Bulk SAP: เลือกหลายงวด → Export พร้อมกัน — แต่ละงวดแยก try-catch ป้องกัน error ข้ามงวด',
-        'Multi-Period Amort: เลือกช่วง Start/End Month เพื่อคำนวณทีละหลายงวด',
-        'Batch Void: เลือกหลาย Doc No พร้อมกัน → รองรับ Full Refund, Partial Refund, Loss',
-        'Performance: Module-level cache (60s) + CacheService (5 min) — ทุก module เร็วขึ้น',
-        'Pagination: 50 รายการ/หน้า — amort results, SAP preview, void list, checker results',
-        'Cache Clear: ปุ่ม Clear Cache ใน Admin Console → ล้าง CacheService + module-level cache',
-        'Dark Mode: ใช้ CSS Variables + Local Storage — คงค่าที่ผู้ใช้เลือก',
-        'Data Import: วาง CSV/Excel → Auto-map columns (TH/EN) → Preview → Import → History',
-        'GL Recon: เปรียบเทียบ GL Balance กับ System — สีเขียว ≤1%, เหลือง 1-5%, แดง >5%',
-        'Period-Close: 4-item checklist (Checker → Amort → SAP → Void) ก่อนปิดงวด',
-        'Approval Flow: Submit → Approve/Reject → Auto-amortize-on-approve'
+        'Batching: สูงสุด ' + CONFIG.MAX_LINES_PER_JE + ' Lines/JE Document — สร้างหลาย Document อัตโนมัติ (SAP JE + Void)',
+        'Bulk SAP (B7): เลือกหลายงวด → Export พร้อมกัน — แต่ละงวดแยก try-catch ป้องกัน error ข้ามงวด',
+        'Multi-Period Amort (B2): เลือกช่วง Start/End Month เพื่อคำนวณทีละหลายงวด',
+        'Batch Void (B3): เลือกหลาย Doc No พร้อมกัน → รองรับ Full Refund, Partial Refund, Loss',
+        'Deferral Modify (B4): แก้ไข Start Date/End Date/Amount ของรายการ — เปรียบเทียบ Old vs New',
+        'Running Balance (B5): แสดงยอด Consumption + Remaining ราย DOC ใน Dashboard — ดูลึกถึงรายการ',
+        'Email Notifications (B6): ส่งรายงานหลัง Auto-Run — Weekly Expiration Alert (30 วัน)',
+        'Auto-Run Trigger (B1): ตั้งวันที่ N ของเดือน → Amortization อัตโนมัติ + ส่ง Email รายงาน',
+        'Performance: Module-level cache (60s) + CacheService (5 min) — ทุก module เร็วขึ้น ลด GAS quota',
+        'Pagination: 50 รายการ/หน้า — Amort results, SAP JE preview, Void doc list, Checker results, CRUD',
+        'Cache Clear: ปุ่ม Clear Cache ใน Admin Console → ล้าง CacheService + Module-level cache',
+        'Dark Mode: ใช้ CSS Variables + Local Storage — คงค่าที่ผู้ใช้เลือกข้าม Session',
+        'Data Import (C7): วาง CSV/Excel → Auto-map columns (TH/EN) → Preview → Import → History',
+        'GL Recon (C6): เปรียบเทียบ GL Balance (SAP) กับ System Balance — สีเขียว ≤1%, เหลือง 1-5%, แดง >5%',
+        'Period-Close (C2): 4-item checklist (Checker → Amort → SAP → Void) ก่อนปิดงวด + History',
+        'Approval Flow (C3): Submit → Approve/Reject → Auto-execute-on-approve + History',
+        'Prepaid CRUD (C1): Add/Edit/Delete รายการ — Doc No Auto-generate + Audit Log',
+        'Dashboard Config: เลือก KPI ที่แสดง / ซ่อน — ปรับแต่ง Dashboard ตามต้องการ',
+        'Mobile Responsive: Hamburger Nav + Bottom Nav (≤768px) — ใช้งานบนมือถือได้',
+        'Data Architecture: 3,979 records จาก Input Sheet — Cache อ่านครั้งเดียว ทำงานจาก Cache',
+        'Void Types: Full Refund (กลับรายการ Dr/Cr), Partial Refund (ส่วนที่เหลือ), Loss (ตัดสูญ)',
+        'Security: Authentication ผ่าน GAS Account — Domain/Anyone ตามการตั้งค่า appsscript.json'
       ]
     };
   } catch (e) {
@@ -300,7 +314,7 @@ function getSystemInfo() {
   try {
     return {
       ok: true,
-      version: 'v32 (Phase A-C7: Quick Wins → Budget → GL Recon → Import)',
+      version: 'v34 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
       runtime: 'Google Apps Script (V8)',
       deploy: ScriptApp.getScriptId().substring(0, 8) + '...'
     };
