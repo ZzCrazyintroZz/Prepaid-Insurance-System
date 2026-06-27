@@ -17,6 +17,46 @@ function toast(msg,type){tost(msg,type)}
 function showResult(id, html){var el=document.getElementById(id);el.innerHTML=html;el.classList.add('show')}
 var chartInstances={};
 
+// ========== CLIENT-SIDE CACHE ==========
+var ClientSideCache = (function() {
+  var cache = {};
+  var PREFIX = 'csc_';
+  return {
+    get: function(key) {
+      if (cache[key] && Date.now() < cache[key].expiry) {
+        return cache[key].data;
+      }
+      if (cache[key]) delete cache[key];
+      try {
+        var stored = localStorage.getItem(PREFIX + key);
+        if (stored) {
+          var entry = JSON.parse(stored);
+          if (Date.now() < entry.expiry) {
+            cache[key] = entry;
+            return entry.data;
+          }
+          localStorage.removeItem(PREFIX + key);
+        }
+      } catch(e) {}
+      return null;
+    },
+    set: function(key, data, ttlSeconds) {
+      var expiry = Date.now() + (ttlSeconds || 300) * 1000;
+      var entry = {data: data, expiry: expiry};
+      cache[key] = entry;
+      try {
+        localStorage.setItem(PREFIX + key, JSON.stringify(entry));
+      } catch(e) {}
+    },
+    remove: function(key) {
+      delete cache[key];
+      try {
+        localStorage.removeItem(PREFIX + key);
+      } catch(e) {}
+    }
+  };
+})();
+
 // ========== PERFORMANCE: BATCH API WRAPPER ==========
 /**
  * Batch call multiple backend functions in a single round-trip
@@ -1290,7 +1330,6 @@ function loadSAP(){
 function loadChecker(){
   document.getElementById('loaderChecker').classList.add('hidden');
   document.getElementById('checkerResult').style.display='none';
-  document.getElementById('checkerBody').innerHTML='';
 }
 
 // ========== MOBILE NAV TOGGLE ==========
@@ -3114,7 +3153,7 @@ function saveEmailConfig(){
     if(r.ok){toast('✅ Dashboard config saved','ok');loadDashboard()}else{toast('❌ '+r.error,'er')}
   }).withFailureHandler(function(e){
     toast('❌ Save failed: '+e.message,'er');
-  }).saveDashboardConfig(cfg);
+  }).saveEmailConfig(config);
 }
 
 function sendTestEmail(){
@@ -5155,137 +5194,7 @@ function resetDashConfig() {
   }).resetDashboardConfig();
 }
 
-// ========== PATCH: update loadDashboard for Budget KPIs + Config ==========
-// We override the loadDashboard to also show budget KPIs and respect config
-var _origLoadDashboard = loadDashboard;
-loadDashboard = function() {
-  google.script.run.withSuccessHandler(function(r) {
-    if (!r.ok) { document.getElementById('dashSub').textContent = 'Error: ' + (r.error || ''); return; }
-    
-    var config = r.dashboardConfig || {};
-    
-    // Apply config visibility
-    var showKPIs = config.showKPIs !== false;
-    var showCharts = config.showCharts !== false;
-    var showBudget = config.showBudget !== false;
-    var showRunningBalance = config.showRunningBalance !== false;
-    
-    // Show/hide KPI sections
-    document.getElementById('kpiNewRow1').style.display = showKPIs ? 'grid' : 'none';
-    document.getElementById('kpiNewRow2').style.display = showKPIs ? 'grid' : 'none';
-    document.getElementById('dashKpis').style.display = showKPIs ? 'grid' : 'none';
-    
-    // Show/hide charts
-    document.querySelectorAll('.chart-grid').forEach(function(el) { el.style.display = showCharts ? 'grid' : 'none'; });
-    document.querySelectorAll('#secDashboard .card').forEach(function(el) {
-      // Keep budget KPI card, running balance, expiring, data quality, freshness visible
-      if (el.id === 'runningBalanceCard') return;
-      if (el.querySelector('h3') && (el.querySelector('h3').textContent.indexOf('กราฟ') >= 0 || 
-          el.querySelector('h3').textContent.indexOf('Chart') >= 0 ||
-          el.querySelector('h3').textContent.indexOf('แนวโน้ม') >= 0)) {
-        // Chart cards are handled by .chart-grid already
-      }
-    });
-    // Show/hide chart cards specifically
-    var chartCards = document.querySelectorAll('#secDashboard .card .chart-wrap');
-    chartCards.forEach(function(cw) {
-      var card = cw.closest('.card');
-      if (card) card.style.display = showCharts ? 'block' : 'none';
-    });
-    
-    // Show/hide Budget KPIs
-    var budgetKpis = document.getElementById('budgetKpis');
-    if (budgetKpis) {
-      if (showBudget && r.budgetSummary) {
-        budgetKpis.style.display = 'grid';
-        var bs = r.budgetSummary;
-        document.getElementById('dBudgetTotal').textContent = '฿' + fmt(bs.totalBudget);
-        document.getElementById('dBudgetActual').textContent = '฿' + fmt(bs.totalActual);
-        var varEl = document.getElementById('dBudgetVariance');
-        varEl.textContent = (bs.variance >= 0 ? '+' : '') + '฿' + fmt(Math.abs(bs.variance));
-        varEl.style.color = bs.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
-        document.getElementById('dBudgetVarianceCard').style.borderLeftColor = bs.variance <= 0 ? 'var(--gn)' : 'var(--rd)';
-        var pctEl = document.getElementById('dBudgetPct');
-        pctEl.textContent = bs.variancePct >= 999 ? '—' : bs.variancePct.toFixed(2) + '%';
-        pctEl.style.color = bs.variancePct <= 100 ? 'var(--gn)' : 'var(--rd)';
-      } else {
-        budgetKpis.style.display = 'none';
-      }
-    }
-    
-    // Show/hide Running Balance
-    var rbCard = document.getElementById('runningBalanceCard');
-    if (rbCard) rbCard.style.display = showRunningBalance ? 'block' : 'none';
-    
-    // Now call original loadDashboard logic to populate the rest
-    _callOrigLoadDashboard(r);
-    
-  }).withFailureHandler(function(e) {
-    document.getElementById('dashSub').textContent = 'Error: ' + e.message;
-    document.getElementById('statusTxt').textContent = 'Error';
-    document.getElementById('statusDot').className = 'dot r';
-  }).getDashboardData();
-};
 
-// Helper to call original loadDashboard rendering logic
-function _callOrigLoadDashboard(r) {
-  // Existing KPIs
-  document.getElementById('dTotalItems').textContent = r.totalItems.toLocaleString();
-  document.getElementById('dTotalAmt').textContent = fmt(r.totalAmortization);
-  document.getElementById('dCurPeriod').textContent = r.currentPeriod;
-  document.getElementById('dashSub').textContent = r.totalItems.toLocaleString() + ' รายการ · ' + r.currentPeriod;
-  document.getElementById('statusTxt').textContent = r.totalItems + ' rec';
-  document.getElementById('statusDot').className = 'dot g';
-  
-  // New KPI Row 1
-  document.getElementById('dActiveItems').textContent = r.activeItems !== undefined ? r.activeItems.toLocaleString() : '—';
-  document.getElementById('dCompletedItems').textContent = 'Completed: ' + (r.completedItems !== undefined ? r.completedItems.toLocaleString() : '—');
-  document.getElementById('dTotalRemaining').textContent = r.totalRemaining !== undefined ? '฿' + fmt(r.totalRemaining) : '—';
-  document.getElementById('dAvgDuration').textContent = r.avgDurationMonths !== undefined ? r.avgDurationMonths.toFixed(1) : '—';
-  document.getElementById('dExpiringThisMonth').textContent = r.expiringThisMonth !== undefined ? r.expiringThisMonth.toLocaleString() : '—';
-  if (r.momChange && r.momChange.changePercent !== undefined && r.momChange.changePercent !== null) {
-    var momV = r.momChange.changePercent;
-    document.getElementById('dMomChange').textContent = (momV > 0 ? '+' : '') + momV.toFixed(1) + '%';
-    document.getElementById('dMomChange').style.color = momV >= 0 ? 'var(--gn)' : 'var(--rd)';
-    document.getElementById('dMomPeriod').textContent = r.momChange.period || '';
-  } else {
-    document.getElementById('dMomChange').textContent = '—';
-    document.getElementById('dMomPeriod').textContent = '';
-  }
-  
-  // New KPI Row 2 — Largest Item
-  if (r.largestItem) {
-    document.getElementById('dLargestItem').textContent = (r.largestItem.docNo || '') + ' — ' + (r.largestItem.description || '').substring(0, 40);
-    document.getElementById('dLargestAmt').textContent = '฿' + fmt(r.largestItem.amount);
-  } else {
-    document.getElementById('dLargestItem').textContent = '—';
-    document.getElementById('dLargestAmt').textContent = '';
-  }
-  // Health Score
-  var hs = r.healthScore !== undefined ? r.healthScore : 0;
-  document.getElementById('dHealthScore').textContent = hs + '%';
-  var bar = document.getElementById('dHealthBar');
-  bar.style.width = hs + '%';
-  bar.style.background = hs >= 80 ? 'var(--gn)' : hs >= 50 ? 'var(--gold)' : 'var(--rd)';
-  
-  // Data Freshness
-  var freshnessEl = document.getElementById('dataFreshnessBody');
-  var now = new Date();
-  freshnessEl.innerHTML =
-    '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px">' +
-    '<span style="color:var(--mt)">Last Checked:</span><span>' + now.toLocaleString('th-TH') + '</span>' +
-    '<span style="color:var(--mt)">Data Source:</span><span>Input Sheet (' + (r.totalItems || 0) + ' records)</span>' +
-    '<span style="color:var(--mt)">Refresh:</span><span>Auto (5-min cache)</span>' +
-    '<span style="color:var(--mt)">Status:</span><span><span class="dot g" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> Online</span>' +
-    '</div>';
-  
-  // Render all charts
-  renderCharts(r);
-  // Phase A: drill-down dashboard
-  setTimeout(function() { setupDashboardDrillDown(r); }, 50);
-  // B5: Load Running Balance data
-  setTimeout(function() { loadRunningBalance(r); }, 200);
-}
 
 // ========== PATCH: Add budget to go() routing ==========
 var _origGo = go;
