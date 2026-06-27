@@ -5,6 +5,242 @@
  * Account: tippawan.si@pt.co.th
  */
 
+// ================= PERFORMANCE OPTIMIZATIONS =================
+// Cache key prefix - shorter and consistent
+const CACHE_PREFIX = 'pa_';
+
+// Cache TTL constants (seconds)
+const CACHE_TTL_SHORT = 60;     // 1 minute
+const CACHE_TTL_MEDIUM = 300;   // 5 minutes
+const CACHE_TTL_LONG = 3600;    // 1 hour
+
+// Batch API endpoint - call multiple backend functions in one round-trip
+function batchGet(fns) {
+  try {
+    if (!fns || !Array.isArray(fns) || fns.length === 0) {
+      return { ok: false, error: 'fns must be a non-empty array of function names' };
+    }
+    
+    var results = {};
+    var errors = {};
+    
+    for (var i = 0; i < fns.length; i++) {
+      var fnName = fns[i];
+      try {
+        // Whitelist of allowed functions for batch calls
+        var allowedFunctions = {
+          'getDashboardData': getDashboardData,
+          'getSettings': getSettings,
+          'getEmailConfig': getEmailConfig,
+          'getDashboardConfig': getDashboardConfig,
+          'getSyncStatus': getSyncStatus,
+          'getSystemInfo': getSystemInfo,
+          'getDocList': getDocList,
+          'getBudgetSummary': getBudgetSummary,
+          'getBudgetData': getBudgetData,
+          'getAllBudgetPeriods': getAllBudgetPeriods,
+          'getGLSummary': getGLSummary,
+          'getAvailablePeriods': getAvailablePeriods,
+          'getCrudRecords': getCrudRecords,
+          'getImportHistory': getImportHistory,
+          'getAuditLog': getAuditLog,
+          'getUserGuideData': getUserGuideData,
+          'getConfig': getConfig,
+          'getTriggerStatus': getTriggerStatus
+        };
+        
+        var fn = allowedFunctions[fnName];
+        if (!fn) {
+          errors[fnName] = 'Function not allowed in batch: ' + fnName;
+          continue;
+        }
+        
+        var result = fn();
+        results[fnName] = result;
+      } catch (e) {
+        errors[fnName] = e.message;
+      }
+    }
+    
+    return { ok: true, results: results, errors: Object.keys(errors).length > 0 ? errors : undefined };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Warm-up endpoint - pre-populates all caches on deploy
+function warmup() {
+  try {
+    var results = {};
+    var startTime = new Date().getTime();
+    
+    // Warm up dashboard cache
+    var dashStart = new Date().getTime();
+    var dashResult = getDashboardData();
+    results.dashboard = { ok: dashResult.ok, timeMs: new Date().getTime() - dashStart };
+    
+    // Warm up settings
+    var settingsStart = new Date().getTime();
+    var settingsResult = getSettings();
+    results.settings = { ok: settingsResult.ok, timeMs: new Date().getTime() - settingsStart };
+    
+    // Warm up email config
+    var emailStart = new Date().getTime();
+    var emailResult = getEmailConfig();
+    results.emailConfig = { ok: emailResult.ok, timeMs: new Date().getTime() - emailStart };
+    
+    // Warm up dashboard config
+    var dashConfigStart = new Date().getTime();
+    var dashConfigResult = getDashboardConfig();
+    results.dashboardConfig = { ok: dashConfigResult.ok, timeMs: new Date().getTime() - dashConfigStart };
+    
+    // Warm up sync status
+    var syncStart = new Date().getTime();
+    var syncResult = getSyncStatus();
+    results.syncStatus = { ok: syncResult.ok, timeMs: new Date().getTime() - syncStart };
+    
+    // Warm up system info
+    var sysStart = new Date().getTime();
+    var sysResult = getSystemInfo();
+    results.systemInfo = { ok: sysResult.ok, timeMs: new Date().getTime() - sysStart };
+    
+    // Warm up budget summary
+    var budgetStart = new Date().getTime();
+    var budgetResult = getBudgetSummary();
+    results.budgetSummary = { ok: budgetResult.ok, timeMs: new Date().getTime() - budgetStart };
+    
+    // Warm up GL summary
+    var glStart = new Date().getTime();
+    var glResult = getGLSummary();
+    results.glSummary = { ok: glResult.ok, timeMs: new Date().getTime() - glStart };
+    
+    // Warm up available periods
+    var periodsStart = new Date().getTime();
+    var periodsResult = getAvailablePeriods();
+    results.availablePeriods = { ok: periodsResult.ok, timeMs: new Date().getTime() - periodsStart };
+    
+    // Warm up CRUD records
+    var crudStart = new Date().getTime();
+    var crudResult = getCrudRecords();
+    results.crudRecords = { ok: crudResult.ok, timeMs: new Date().getTime() - crudStart };
+    
+    // Warm up import history
+    var importStart = new Date().getTime();
+    var importResult = getImportHistory();
+    results.importHistory = { ok: importResult.ok, timeMs: new Date().getTime() - importStart };
+    
+    // Warm up audit log
+    var auditStart = new Date().getTime();
+    var auditResult = getAuditLog();
+    results.auditLog = { ok: auditResult.ok, timeMs: new Date().getTime() - auditStart };
+    
+    // Warm up user guide data
+    var guideStart = new Date().getTime();
+    var guideResult = getUserGuideData();
+    results.userGuide = { ok: guideResult.ok, timeMs: new Date().getTime() - guideStart };
+    
+    // Warm up config
+    var configStart = new Date().getTime();
+    var configResult = getConfig();
+    results.config = { ok: configResult.ok, timeMs: new Date().getTime() - configStart };
+    
+    // Warm up trigger status
+    var triggerStart = new Date().getTime();
+    var triggerResult = getTriggerStatus();
+    results.triggerStatus = { ok: triggerResult.ok, timeMs: new Date().getTime() - triggerStart };
+    
+    var totalTime = new Date().getTime() - startTime;
+    
+    return {
+      ok: true,
+      totalTimeMs: totalTime,
+      message: 'Warm-up completed in ' + totalTime + 'ms',
+      results: results
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Optimized cache key generator - shorter keys with consistent prefix
+function cacheKey_(key) {
+  return CACHE_PREFIX + key;
+}
+
+// Get from cache with compact JSON (no whitespace)
+function cacheGetCompact_(key) {
+  var cache = CacheService.getScriptCache();
+  var val = cache.get(cacheKey_(key));
+  if (!val) return null;
+  try {
+    return JSON.parse(val);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Put to cache with compact JSON (no whitespace)
+function cachePutCompact_(key, obj, ttl) {
+  var cache = CacheService.getScriptCache();
+  var json = JSON.stringify(obj);  // Already compact by default
+  if (json.length > 100000) {
+    // Too large for cache, skip
+    return false;
+  }
+  cache.put(cacheKey_(key), json, ttl || CACHE_TTL_MEDIUM);
+  return true;
+}
+
+// Clear cache by prefix pattern
+function cacheClearPrefix_(prefix) {
+  var cache = CacheService.getScriptCache();
+  // CacheService doesn't support pattern removal, so we clear known keys
+  var knownKeys = [
+    'dash_v2', 'dashboard_data', 'dash_data',
+    'input_summary', 'amort_data', 'input_data_v2',
+    'avail_periods_v2', 'budget_data', 'gl_recon_data_v1',
+    'gl_balance_', 'gl_recon_history_v1', 'gl_recon_seq_v1',
+    'dashboardConfig', 'budgetData', 'settings', 'emailConfig',
+    'INPUT_SHEET_ID', 'SAP_TEMPLATE_ID', 'LAST_SYNC'
+  ];
+  
+  for (var i = 0; i < knownKeys.length; i++) {
+    var fullKey = cacheKey_(knownKeys[i]);
+    try { cache.remove(fullKey); } catch(e) {}
+    // Also try without prefix for backward compatibility
+    try { cache.remove(knownKeys[i]); } catch(e) {}
+  }
+}
+
+// Payload reduction: filter object to only include specified fields
+function filterFields_(obj, fields) {
+  if (!obj || !fields || !Array.isArray(fields) || fields.length === 0) {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(function(item) { return filterFields_(item, fields); });
+  }
+  
+  var result = {};
+  for (var i = 0; i < fields.length; i++) {
+    var field = fields[i];
+    if (obj.hasOwnProperty(field)) {
+      result[field] = obj[field];
+    }
+  }
+  return result;
+}
+
+// Wrapper to get dashboard data with optional field filtering
+function getDashboardDataFiltered(fields) {
+  var result = getDashboardData();
+  if (result.ok && fields && Array.isArray(fields) && fields.length > 0) {
+    result = filterFields_(result, fields);
+  }
+  return result;
+}
+
 // ================= CONFIGURATION =================
 const CONFIG = {
   INPUT_SHEET_ID: '1vnzmnZtR9U5cQcSdpjY22mR30ULbgHd62JcfC50ZC20',

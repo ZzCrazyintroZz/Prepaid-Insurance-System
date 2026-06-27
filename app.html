@@ -10,12 +10,473 @@ function toggleDark() {
   document.getElementById('darkIcon').className='bi bi-sun';}})();
 
 // ========== HELPERS ==========
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;')}
+function esc(s){return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"')}
 function fmt(n){if(n===undefined||n===null)return'—';return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function tost(msg,type){var c=document.getElementById('toastContainer'),t=document.createElement('div');t.className='toast '+(type||'');t.textContent=msg;c.appendChild(t);setTimeout(function(){t.remove()},3000)}
 function toast(msg,type){tost(msg,type)}
 function showResult(id, html){var el=document.getElementById(id);el.innerHTML=html;el.classList.add('show')}
 var chartInstances={};
+
+// ========== PERFORMANCE: BATCH API WRAPPER ==========
+/**
+ * Batch call multiple backend functions in a single round-trip
+ * @param {string[]} fns - Array of function names to call
+ * @param {Function} callback - Success callback with results object {results: {fnName: result}}
+ * @param {Function} [errorCallback] - Optional error callback
+ */
+function batchCall(fns, callback, errorCallback) {
+  if (!fns || !Array.isArray(fns) || fns.length === 0) {
+    if (errorCallback) errorCallback({message: 'fns must be a non-empty array'});
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.ok) {
+        callback(response.results, response.errors);
+      } else {
+        if (errorCallback) errorCallback(response.error);
+      }
+    })
+    .withFailureHandler(function(e) {
+      if (errorCallback) errorCallback(e.message);
+    })
+    .batchGet(fns);
+}
+
+/**
+ * Warm up all caches - call from CI/CD or manually
+ * @param {Function} callback - Success callback with warmup result
+ * @param {Function} [errorCallback] - Optional error callback
+ */
+function warmupCall(callback, errorCallback) {
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.ok) {
+        callback(response);
+      } else {
+        if (errorCallback) errorCallback(response.error);
+      }
+    })
+    .withFailureHandler(function(e) {
+      if (errorCallback) errorCallback(e.message);
+    })
+    .warmup();
+}
+
+// ========== PERFORMANCE UTILITIES ==========
+// Debounce function - delays execution until after wait ms of no calls
+function debounce(fn, wait) {
+  var timer = null;
+  return function() {
+    var ctx = this, args = arguments;
+    clearTimeout(timer);
+    timer = setTimeout(function() { fn.apply(ctx, args); }, wait);
+  };
+}
+
+// Throttle function - limits execution to once per wait ms
+function throttle(fn, wait) {
+  var last = 0;
+  return function() {
+    var now = Date.now();
+    if (now - last >= wait) {
+      last = now;
+      fn.apply(this, arguments);
+    }
+  };
+}
+
+// Passive scroll listener helper
+function addPassiveScrollListener(element, handler) {
+  element.addEventListener('scroll', handler, { passive: true });
+}
+
+// ========== VIRTUAL SCROLL MODULE ==========
+var VirtualScroll = (function() {
+  function VirtualScroll(container, options) {
+    this.container = container;
+    this.rowHeight = options.rowHeight || 35;
+    this.buffer = options.buffer || 10;
+    this.renderRow = options.renderRow;
+    this.data = [];
+    this.visibleStart = 0;
+    this.visibleEnd = 0;
+    this.scrollTop = 0;
+    this.containerHeight = 0;
+    this.totalHeight = 0;
+    
+    this.spacerTop = document.createElement('div');
+    this.spacerTop.style.height = '0px';
+    this.spacerBottom = document.createElement('div');
+    this.spacerBottom.style.height = '0px';
+    
+    this.tbody = container.querySelector('tbody');
+    if (!this.tbody) {
+      this.tbody = document.createElement('tbody');
+      container.appendChild(this.tbody);
+    }
+    
+    this.tbody.parentNode.insertBefore(this.spacerTop, this.tbody);
+    this.tbody.parentNode.appendChild(this.spacerBottom);
+    
+    this._onScroll = this._onScroll.bind(this);
+    addPassiveScrollListener(container.closest('.tw') || container, this._onScroll);
+    window.addEventListener('resize', throttle(this._onResize.bind(this), 150));
+  }
+  
+  VirtualScroll.prototype.setData = function(data) {
+    this.data = data || [];
+    this.totalHeight = this.data.length * this.rowHeight;
+    this._updateSpacers();
+    this._renderVisible();
+  };
+  
+  VirtualScroll.prototype._onScroll = function(e) {
+    var scrollContainer = e.target;
+    this.scrollTop = scrollContainer.scrollTop;
+    this.containerHeight = scrollContainer.clientHeight;
+    this._renderVisible();
+  };
+  
+  VirtualScroll.prototype._onResize = function() {
+    var scrollContainer = this.container.closest('.tw') || this.container;
+    this.containerHeight = scrollContainer.clientHeight;
+    this._renderVisible();
+  };
+  
+  VirtualScroll.prototype._renderVisible = function() {
+    var start = Math.max(0, Math.floor(this.scrollTop / this.rowHeight) - this.buffer);
+    var end = Math.min(this.data.length, Math.ceil((this.scrollTop + this.containerHeight) / this.rowHeight) + this.buffer);
+    
+    if (start === this.visibleStart && end === this.visibleEnd) return;
+    
+    this.visibleStart = start;
+    this.visibleEnd = end;
+    
+    this._updateSpacers();
+    
+    var html = '';
+    for (var i = start; i < end; i++) {
+      html += this.renderRow(this.data[i], i);
+    }
+    this.tbody.innerHTML = html;
+  };
+  
+  VirtualScroll.prototype._updateSpacers = function() {
+    this.spacerTop.style.height = (this.visibleStart * this.rowHeight) + 'px';
+    this.spacerBottom.style.height = ((this.data.length - this.visibleEnd) * this.rowHeight) + 'px';
+  };
+  
+  VirtualScroll.prototype.destroy = function() {
+    var scrollContainer = this.container.closest('.tw') || this.container;
+    scrollContainer.removeEventListener('scroll', this._onScroll);
+    window.removeEventListener('resize', this._onResize);
+    if (this.spacerTop.parentNode) this.spacerTop.parentNode.removeChild(this.spacerTop);
+    if (this.spacerBottom.parentNode) this.spacerBottom.parentNode.removeChild(this.spacerBottom);
+  };
+  
+  return VirtualScroll;
+
+// ========== VIRTUAL SCROLL INITIALIZATION HELPERS ==========
+function initVirtualScroll(tbodyId, data, renderRow, options) {
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return null;
+  var container = tbody.closest('.tw');
+  if (!container) return null;
+  
+  // Check if already initialized
+  if (container._virtualScroll) {
+    container._virtualScroll.setData(data);
+    return container._virtualScroll;
+  }
+  
+  var vs = new VirtualScroll(container, Object.assign({
+    rowHeight: 35,
+    buffer: 10,
+    renderRow: renderRow
+  }, options));
+  
+  vs.setData(data);
+  container._virtualScroll = vs;
+  return vs;
+}
+
+function destroyVirtualScroll(tbodyId) {
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  var container = tbody.closest('.tw');
+  if (container && container._virtualScroll) {
+    container._virtualScroll.destroy();
+    container._virtualScroll = null;
+  }
+}
+
+})();
+
+// ========== CHART.JS OPTIMIZATIONS ==========
+var ChartManager = (function() {
+  var instances = {};
+  var visibilityObservers = {};
+  var chartConfigs = {};
+  var decimationPluginLoaded = false;
+  
+  // Load decimation plugin for large datasets
+  function loadDecimationPlugin() {
+    if (decimationPluginLoaded || typeof Chart === 'undefined') return;
+    try {
+      // Chart.js decimation plugin inline (minimal version)
+      var DecimationPlugin = {
+        id: 'decimation',
+        beforeDatasetsUpdate: function(chart) {
+          var meta = chart.getDatasetMeta(0);
+          if (!meta.data || meta.data.length < 500) return;
+          var decimation = chart.options.plugins?.decimation;
+          if (!decimation || decimation.enabled === false) return;
+          
+          var threshold = decimation.threshold || 500;
+          var algorithm = decimation.algorithm || 'lttb';
+          
+          if (meta.data.length > threshold) {
+            // Simple LTTB decimation
+            var data = chart.data.datasets[0].data;
+            var labels = chart.data.labels;
+            var sampled = lttbDecimate(data, labels, threshold);
+            chart.data.datasets[0].data = sampled.data;
+            chart.data.labels = sampled.labels;
+            meta._decimated = true;
+            meta._originalData = data;
+            meta._originalLabels = labels;
+          }
+        },
+        afterRender: function(chart) {
+          var meta = chart.getDatasetMeta(0);
+          if (meta._decimated) {
+            chart.data.datasets[0].data = meta._originalData;
+            chart.data.labels = meta._originalLabels;
+            meta._decimated = false;
+          }
+        }
+      };
+      
+      function lttbDecimate(data, labels, threshold) {
+        if (data.length <= threshold) return { data: data, labels: labels };
+        var sampled = [];
+        var sampledLabels = [];
+        var every = (data.length - 2) / (threshold - 2);
+        var a = 0;
+        sampled.push(data[0]);
+        sampledLabels.push(labels[0]);
+        
+        for (var i = 1; i < threshold - 1; i++) {
+          var avgStart = Math.floor(every * (i - 1)) + 1;
+          var avgEnd = Math.floor(every * i) + 1;
+          var avgX = 0, avgY = 0;
+          for (var j = avgStart; j < avgEnd && j < data.length; j++) {
+            avgX += j;
+            avgY += data[j];
+          }
+          avgX /= (avgEnd - avgStart);
+          avgY /= (avgEnd - avgStart);
+          
+          var rangeStart = Math.floor(every * i) + 1;
+          var rangeEnd = Math.floor(every * (i + 1)) + 1;
+          var maxArea = -1, maxIdx = rangeStart;
+          for (var k = rangeStart; k < rangeEnd && k < data.length; k++) {
+            var area = Math.abs((avgX - 0) * (data[k] - data[0]) - (avgX - k) * (avgY - data[0]));
+            if (area > maxArea) {
+              maxArea = area;
+              maxIdx = k;
+            }
+          }
+          sampled.push(data[maxIdx]);
+          sampledLabels.push(labels[maxIdx]);
+        }
+        sampled.push(data[data.length - 1]);
+        sampledLabels.push(labels[labels.length - 1]);
+        return { data: sampled, labels: sampledLabels };
+      }
+      
+      Chart.register(DecimationPlugin);
+      decimationPluginLoaded = true;
+    } catch (e) {
+      console.warn('Decimation plugin failed to load:', e);
+    }
+  }
+  
+  function registerChart(id, config) {
+    chartConfigs[id] = config;
+  }
+  
+  function initChart(id, force) {
+    if (instances[id] && !force) return instances[id];
+    
+    var config = chartConfigs[id];
+    if (!config) return null;
+    
+    var canvas = document.getElementById(id);
+    if (!canvas) return null;
+    
+    // Apply default optimizations
+    var optimizedConfig = Object.assign({}, config);
+    optimizedConfig.options = Object.assign({}, config.options);
+    optimizedConfig.options.animation = Object.assign({
+      duration: 100, // Reduced from 300ms
+      easing: 'easeOutQuart'
+    }, config.options?.animation);
+    optimizedConfig.options.responsive = true;
+    optimizedConfig.options.maintainAspectRatio = false;
+    
+    // Add decimation for large datasets
+    if (config.data?.datasets?.[0]?.data?.length > 300) {
+      optimizedConfig.options.plugins = Object.assign({}, config.options?.plugins);
+      optimizedConfig.options.plugins.decimation = {
+        enabled: true,
+        algorithm: 'lttb',
+        threshold: 300
+      };
+    }
+    
+    loadDecimationPlugin();
+    
+    var ctx = canvas.getContext('2d');
+    instances[id] = new Chart(ctx, optimizedConfig);
+    return instances[id];
+  }
+  
+  function destroyChart(id) {
+    if (instances[id]) {
+      instances[id].destroy();
+      delete instances[id];
+    }
+  }
+  
+  function destroyAllCharts() {
+    for (var id in instances) {
+      destroyChart(id);
+    }
+  }
+  
+  function getChart(id) {
+    return instances[id];
+  }
+  
+  function setupLazyInit(sectionId, chartIds) {
+    var section = document.getElementById(sectionId);
+    if (!section) return;
+    
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          chartIds.forEach(function(id) {
+            initChart(id);
+          });
+          observer.unobserve(section);
+        }
+      });
+    }, { rootMargin: '100px', threshold: 0.01 });
+    
+    observer.observe(section);
+    visibilityObservers[sectionId] = observer;
+  }
+  
+  function setupSectionVisibility(sectionId, chartIds) {
+    var section = document.getElementById(sectionId);
+    if (!section) return;
+    
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (!entry.isIntersecting) {
+          chartIds.forEach(function(id) {
+            destroyChart(id);
+          });
+        } else {
+          chartIds.forEach(function(id) {
+            initChart(id);
+          });
+        }
+      });
+    }, { rootMargin: '50px', threshold: 0.01 });
+    
+    observer.observe(section);
+    visibilityObservers[sectionId] = observer;
+  }
+  
+  function cleanupSection(sectionId) {
+    if (visibilityObservers[sectionId]) {
+      visibilityObservers[sectionId].disconnect();
+      delete visibilityObservers[sectionId];
+    }
+  }
+  
+  // Expose API
+  return {
+    registerChart: registerChart,
+    initChart: initChart,
+    destroyChart: destroyChart,
+    destroyAllCharts: destroyAllCharts,
+    getChart: getChart,
+    setupLazyInit: setupLazyInit,
+    setupSectionVisibility: setupSectionVisibility,
+    cleanupSection: cleanupSection,
+    instances: instances
+  };
+})();
+
+// Replace global chartInstances with ChartManager
+var chartInstances = ChartManager.instances;
+
+// ========== SEARCH/FILTER DEBOUNCE ==========
+function createDebouncedSearch(inputId, callback, delay) {
+  var input = document.getElementById(inputId);
+  if (!input) return;
+  
+  var debounced = debounce(function() {
+    callback(input.value.trim());
+  }, delay || 300);
+  
+  input.addEventListener('input', debounced);
+  return debounced;
+}
+
+function createThrottledResize(callback, delay) {
+  return throttle(callback, delay || 150);
+}
+
+// ========== TABLE VIRTUALIZATION HELPERS ==========
+function virtualizeTable(tbodyId, data, renderRow, options) {
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return null;
+  
+  var container = tbody.closest('.tw');
+  if (!container) return null;
+  
+  var vs = new VirtualScroll(container, {
+    rowHeight: options?.rowHeight || 35,
+    buffer: options?.buffer || 10,
+    renderRow: renderRow
+  });
+  
+  vs.setData(data);
+  return vs;
+}
+
+function debounceFilter(inputId, tableSelector, delay) {
+  var timer = null;
+  var input = document.getElementById(inputId);
+  if (!input) return;
+  
+  input.addEventListener('input', function() {
+    clearTimeout(timer);
+    timer = setTimeout(function() {
+      var query = input.value.toLowerCase().trim();
+      document.querySelectorAll(tableSelector + ' tbody tr').forEach(function(row) {
+        if (row.querySelector('td[colspan]')) return;
+        var match = !query || row.textContent.toLowerCase().indexOf(query) !== -1;
+        row.style.display = match ? '' : 'none';
+      });
+    }, delay || 300);
+  });
+}
 
 // ========== PAGINATION ==========
 // Reusable pagination state
@@ -76,54 +537,715 @@ function pagRefresh(section) {
   document.dispatchEvent(evt);
 }
 
+// ========== LAZY SECTION LOADER + CLIENT-SIDE CACHE ==========
+/**
+ * PA Cache Module - Client-side caching with localStorage + in-memory
+ * Cache key pattern: pa_cache_{type}_{key} with TTL
+ * Auto-invalidates on save operations
+ * Fallback to backend if cache miss/expired
+ */
+var PACache = (function() {
+  var memoryCache = {};
+  var DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
+  
+  // TTL configs per data type
+  var TTL_CONFIG = {
+    settings: 30 * 60 * 1000,      // 30 min
+    userGuide: 60 * 60 * 1000,     // 1 hour
+    columnMaps: 24 * 60 * 60 * 1000, // 24 hours
+    glAccounts: 30 * 60 * 1000,    // 30 min
+    dashboard: 2 * 60 * 1000,      // 2 min
+    docList: 5 * 60 * 1000,        // 5 min
+    default: DEFAULT_TTL
+  };
+  
+  function makeKey(type, key) {
+    return 'pa_cache_' + type + '_' + (key || 'default');
+  }
+  
+  function getTTL(type) {
+    return TTL_CONFIG[type] || TTL_CONFIG.default;
+  }
+  
+  function isExpired(entry) {
+    return Date.now() > entry.timestamp + entry.ttl;
+  }
+  
+  function getFromMemory(key) {
+    var entry = memoryCache[key];
+    if (entry && !isExpired(entry)) {
+      return entry.data;
+    }
+    if (entry) {
+      delete memoryCache[key];
+    }
+    return null;
+  }
+  
+  function setInMemory(key, data, ttl) {
+    memoryCache[key] = {
+      data: data,
+      timestamp: Date.now(),
+      ttl: ttl || DEFAULT_TTL
+    };
+  }
+  
+  function getFromLocalStorage(key) {
+    try {
+      var stored = localStorage.getItem(key);
+      if (!stored) return null;
+      var entry = JSON.parse(stored);
+      if (isExpired(entry)) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return entry.data;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  function setInLocalStorage(key, data, ttl) {
+    try {
+      var entry = {
+        data: data,
+        timestamp: Date.now(),
+        ttl: ttl || DEFAULT_TTL
+      };
+      localStorage.setItem(key, JSON.stringify(entry));
+    } catch (e) {
+      // localStorage full or unavailable
+    }
+  }
+  
+  function removeFromLocalStorage(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+  
+  // Public API
+  return {
+    // Get cached data (memory first, then localStorage)
+    get: function(type, key) {
+      var cacheKey = makeKey(type, key);
+      var data = getFromMemory(cacheKey);
+      if (data !== null) return data;
+      data = getFromLocalStorage(cacheKey);
+      if (data !== null) {
+        // Promote to memory cache
+        setInMemory(cacheKey, data, getTTL(type));
+      }
+      return data;
+    },
+    
+    // Set data in both memory and localStorage
+    set: function(type, key, data) {
+      var cacheKey = makeKey(type, key);
+      var ttl = getTTL(type);
+      setInMemory(cacheKey, data, ttl);
+      setInLocalStorage(cacheKey, data, ttl);
+    },
+    
+    // Invalidate specific cache entry
+    invalidate: function(type, key) {
+      var cacheKey = makeKey(type, key);
+      delete memoryCache[cacheKey];
+      removeFromLocalStorage(cacheKey);
+    },
+    
+    // Invalidate all caches of a type (e.g., all settings)
+    invalidateType: function(type) {
+      var prefix = 'pa_cache_' + type + '_';
+      // Clear from memory
+      Object.keys(memoryCache).forEach(function(key) {
+        if (key.indexOf(prefix) === 0) delete memoryCache[key];
+      });
+      // Clear from localStorage
+      try {
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(prefix) === 0) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+      } catch (e) {}
+    },
+    
+    // Invalidate all caches (on logout or major data change)
+    invalidateAll: function() {
+      memoryCache = {};
+      try {
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('pa_cache_') === 0) keysToRemove.push(k);
+        }
+        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+      } catch (e) {}
+    },
+    
+    // Clear expired entries
+    cleanup: function() {
+      var now = Date.now();
+      // Memory
+      Object.keys(memoryCache).forEach(function(key) {
+        if (isExpired(memoryCache[key])) delete memoryCache[key];
+      });
+      // localStorage
+      try {
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('pa_cache_') === 0) {
+            var entry = JSON.parse(localStorage.getItem(k) || '{}');
+            if (entry.timestamp && now > entry.timestamp + (entry.ttl || DEFAULT_TTL)) {
+              keysToRemove.push(k);
+            }
+          }
+        }
+        keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+      } catch (e) {}
+    }
+  };
+})();
+
+// Run cleanup on startup
+PACache.cleanup();
+
+// ========== LAZY SECTION LOADER ==========
+/**
+ * Lazy Section Loader - Loads section HTML/JS on first visit via dynamic import pattern
+ * Keeps only Dashboard in initial payload
+ * Other 16 sections: fetch on demand, cache in memory
+ */
+var LazySectionLoader = (function() {
+  var loadedSections = { dashboard: true }; // Dashboard is pre-loaded
+  var loadingPromises = {};
+  var sectionContentCache = {};
+  
+  // Section content templates (HTML strings for each section)
+  var sectionTemplates = {
+    amort: '<div class="ph"><div class="pt">Run Amortization</div><div class="ps">คำนวณตัดจ่ายรายเดือน</div></div>' +
+      '<div class="card">' +
+        '<div class="fg"><label>งวด</label><input class="fi" id="amortPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด"></div>' +
+        '<div class="fg" style="margin-top:8px">' +
+          '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">' +
+            '<input type="checkbox" id="multiPeriodChk" onchange="toggleMultiPeriod()" style="accent-color:var(--gold)"> Multi-Period' +
+          '</label>' +
+        '</div>' +
+        '<div id="multiPeriodRange" class="fg" style="display:none;margin-top:6px;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<label style="font-size:11px;white-space:nowrap">Start</label>' +
+          '<input class="fi" id="mpStart" placeholder="YYYY-MM" style="max-width:130px">' +
+          '<span style="color:var(--mt);font-size:11px">→</span>' +
+          '<label style="font-size:11px;white-space:nowrap">End</label>' +
+          '<input class="fi" id="mpEnd" placeholder="YYYY-MM" style="max-width:130px">' +
+        '</div>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-gn" onclick="runAmort()"><i class="bi bi-play-fill"></i> Run</button>' +
+        '</div>' +
+        '<div id="loaderAmort" class="loader hidden">⏳ กำลังคำนวณ...</div>' +
+        '<div class="result-box" id="resultAmort"></div>' +
+      '</div>',
+    
+    schedule: '<div class="ph"><div class="pt">Amortization Schedule</div><div class="ps">ตารางตัดจ่ายแบบ Wide Format — 1 รายการ/แถว 🟦</div></div>' +
+      '<div class="card">' +
+        '<div class="fg"><label>งวด</label><input class="fi" id="schedPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px"></div>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-pri" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>' +
+          '<button class="btn btn-gn" onclick="exportWide()"><i class="bi bi-file-spreadsheet"></i> Export to Sheet</button>' +
+        '</div>' +
+        '<div id="loaderWide" class="loader hidden">⏳ กำลังโหลด...</div>' +
+        '<div class="result-box" id="resultWide"></div>' +
+        '<div class="tw" style="margin-top:10px;max-height:400px;overflow:auto">' +
+          '<table class="tb" id="wideTable">' +
+            '<thead id="wideHead"></thead>' +
+            '<tbody id="wideBody"><tr><td style="color:var(--mt);text-align:center">กด Preview เพื่อดูข้อมูล</td></tr></tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>',
+    
+    crud: '<div class="ph"><div class="pt">✏️ Prepaid Records</div><div class="ps">สร้าง แก้ไข ลบ รายการค่าใช้จ่ายรอตัดจ่าย — CRUD Operations</div></div>' +
+      '<div class="card" style="padding:12px 20px">' +
+        '<div class="btn-row" style="margin:0">' +
+          '<button class="btn btn-pri" onclick="crudShowAddModal()"><i class="bi bi-plus-circle"></i> ➕ New Record</button>' +
+          '<button class="btn btn-ghost" onclick="crudRefresh()"><i class="bi bi-arrow-repeat"></i> 🔄 Refresh from Sheet</button>' +
+          '<span id="crudRecordCount" style="font-size:11px;color:var(--mt);margin-left:8px"></span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card" style="padding:10px 16px">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<input class="fi" id="crudSearch" placeholder="🔍 ค้นหา Doc No, รายการ, IO, GL..." style="flex:1;min-width:150px" oninput="crudFilter()">' +
+          '<select class="sel" id="crudStatusFilter" onchange="crudFilter()" style="max-width:140px">' +
+            '<option value="">All Status</option>' +
+            '<option value="Active">Active</option>' +
+            '<option value="Expired">Expired</option>' +
+            '<option value="Future">Future</option>' +
+          '</select>' +
+          '<span style="font-size:10px;color:var(--mt)" id="crudFilterCount"></span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<h3><i class="bi bi-table"></i> Prepaid Records</h3>' +
+        '<div id="loaderCrud" class="loader hidden">⏳ กำลังโหลดรายการ...</div>' +
+        '<div class="tw" style="max-height:500px;overflow:auto">' +
+          '<table class="tb" id="crudTable">' +
+            '<thead>' +
+              '<tr>' +
+                '<th>Doc No</th>' +
+                '<th>Description</th>' +
+                '<th>IO</th>' +
+                '<th>GL</th>' +
+                '<th>Start</th>' +
+                '<th>End</th>' +
+                '<th class="num">Amount</th>' +
+                '<th class="num">Amortized</th>' +
+                '<th class="num">Remaining</th>' +
+                '<th class="num">%</th>' +
+                '<th>Status</th>' +
+                '<th style="width:90px">Actions</th>' +
+              '</tr>' +
+            '</thead>' +
+            '<tbody id="crudBody">' +
+              '<tr><td colspan="12" style="text-align:center;color:var(--mt)">กด Refresh เพื่อโหลดข้อมูล</td></tr>' +
+            '</tbody>' +
+          '</table>' +
+        '</div>' +
+        '<div id="crudPagination" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:11px">' +
+          '<span id="crudPageInfo" style="color:var(--mt)">0 items</span>' +
+          '<div class="btn-row" style="gap:4px">' +
+            '<button class="btn btn-ghost btn-sm" id="crudPrevBtn" onclick="crudPrevPage()" disabled>← Prev</button>' +
+            '<span id="crudPageNum" style="color:var(--mt);padding:0 8px;font-family:JetBrains Mono,mono">1</span>' +
+            '<button class="btn btn-ghost btn-sm" id="crudNextBtn" onclick="crudNextPage()" disabled>Next →</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="crudModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:500" onclick="crudCloseModal()"></div>' +
+      '<div id="crudModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:640px;max-height:85vh;background:var(--card2);border:1px solid var(--bdr);border-radius:var(--r);z-index:501;overflow:hidden;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5)">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bdr);background:var(--card)">' +
+          '<h3 id="crudModalTitle" style="font-size:14px;font-weight:500;color:var(--tx);margin:0">✏️ New Prepaid Record</h3>' +
+          '<button onclick="crudCloseModal()" style="background:none;border:none;color:var(--mt);font-size:22px;cursor:pointer;padding:0 4px;line-height:1">&times;</button>' +
+        '</div>' +
+        '<div style="overflow-y:auto;padding:16px;flex:1">' +
+          '<div class="fg"><label>Company</label><input class="fi" id="crudCompany" placeholder="1022" style="max-width:200px"></div>' +
+          '<div class="fg"><label>Posting Date</label><input class="fi" id="crudPostingDate" type="date" style="max-width:200px;font-family:Prompt,sans-serif"></div>' +
+          '<div class="fg"><label>Doc Date</label><input class="fi" id="crudDocDate" type="date" style="max-width:200px;font-family:Prompt,sans-serif"></div>' +
+          '<div class="fg"><label>Description *</label><input class="fi" id="crudDescription" placeholder="รายละเอียดค่าใช้จ่าย" style="flex:1"></div>' +
+          '<div class="fg"><label>Plate</label><input class="fi" id="crudPlate" placeholder="ทะเบียนรถ" style="max-width:180px"></div>' +
+          '<div class="fg"><label>IO *</label><input class="fi" id="crudIo" placeholder="รหัส IO (Debit Key 40)" style="max-width:200px"></div>' +
+          '<div class="fg"><label>GL Prepaid *</label><input class="fi" id="crudGlPrepaid" placeholder="รหัส GL (Credit Key 50)" style="max-width:200px"></div>' +
+          '<div class="fg"><label>Cost Center *</label><input class="fi" id="crudCostCenter" placeholder="ศูนย์ต้นทุน" style="max-width:200px"></div>' +
+          '<div class="fg"><label>Start Date *</label><input class="fi" id="crudStartDate" type="date" style="max-width:200px;font-family:Prompt,sans-serif"></div>' +
+          '<div class="fg"><label>End Date *</label><input class="fi" id="crudEndDate" type="date" style="max-width:200px;font-family:Prompt,sans-serif"></div>' +
+          '<div class="fg"><label>Amount *</label><input class="fi" id="crudAmount" type="number" step="0.01" min="0" placeholder="จำนวนเงิน" style="max-width:200px"></div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--bdr);background:var(--card)">' +
+          '<div id="crudModalError" style="flex:1;font-size:11px;color:var(--rd);display:none"></div>' +
+          '<button class="btn btn-ghost" onclick="crudCloseModal()">Cancel</button>' +
+          '<button class="btn btn-pri" id="crudSaveBtn" onclick="crudSave()"><i class="bi bi-save"></i> Save</button>' +
+          '<div id="loaderCrudSave" class="loader hidden" style="font-size:11px;padding:0">⏳ Saving...</div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="crudDeleteOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:600" onclick="crudCloseDelete()"></div>' +
+      '<div id="crudDeleteModal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:480px;background:var(--card2);border:1px solid var(--bdr);border-radius:var(--r);z-index:601;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bdr);background:var(--card)">' +
+          '<h3 style="font-size:14px;font-weight:500;color:var(--rd);margin:0">⚠️ Delete Record</h3>' +
+          '<button onclick="crudCloseDelete()" style="background:none;border:none;color:var(--mt);font-size:22px;cursor:pointer;padding:0 4px;line-height:1">&times;</button>' +
+        '</div>' +
+        '<div style="padding:16px">' +
+          '<p style="font-size:13px;margin-bottom:12px">Are you sure you want to delete this record?</p>' +
+          '<div id="crudDeleteInfo" style="background:var(--bg);border:1px solid var(--bdr);border-radius:5px;padding:12px;margin-bottom:12px;font-size:12px">' +
+            '<div id="crudDeleteDocNo" style="font-family:JetBrains Mono,mono;font-weight:500;margin-bottom:4px"></div>' +
+            '<div id="crudDeleteDesc" style="color:var(--mt);margin-bottom:4px"></div>' +
+            '<div id="crudDeleteAmount" style="font-family:JetBrains Mono,mono;margin-bottom:4px"></div>' +
+            '<div id="crudDeleteDates" style="font-size:11px;color:var(--mt)"></div>' +
+          '</div>' +
+          '<div id="crudDeleteWarning" class="al al-er" style="display:none;margin-bottom:12px">' +
+            '<i class="bi bi-exclamation-triangle"></i> <span id="crudDeleteWarnText">This item has already been amortized. Deleting it will affect amortization history.</span>' +
+          '</div>' +
+          '<div class="btn-row" style="justify-content:flex-end">' +
+            '<button class="btn btn-ghost" onclick="crudCloseDelete()">Cancel</button>' +
+            '<button class="btn btn-rd" id="crudDeleteBtn" onclick="crudDeleteConfirm()"><i class="bi bi-trash3"></i> Delete</button>' +
+            '<div id="loaderCrudDelete" class="loader hidden" style="font-size:11px;padding:0">⏳ Deleting...</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>',
+    
+    sap: '<div class="ph"><div class="pt">SAP Generator</div><div class="ps">สร้าง Journal Entry — Debit(IO/40) / Credit(GL/50) · 900 lines/JE</div></div>' +
+      '<div class="card">' +
+        '<div class="fg"><label>งวด</label><input class="fi" id="sapPeriod" placeholder="YYYY-MM หรือว่าง=ทั้งหมด" value="" style="max-width:200px"></div>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-pri" onclick="previewSAPJE()"><i class="bi bi-eye"></i> Preview</button>' +
+          '<button class="btn btn-gn" onclick="exportSAPJE()"><i class="bi bi-file-earmark-excel"></i> Generate & Export</button>' +
+        '</div>' +
+        '<div id="loaderSAP" class="loader hidden">⏳ กำลังสร้าง...</div>' +
+        '<div class="result-box" id="resultSAP"></div>' +
+        '<div class="tw" style="margin-top:10px">' +
+          '<table class="tb" id="sapTable">' +
+            '<thead><tr><th>Doc</th><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>IO</th><th>Description</th></tr></thead>' +
+            '<tbody id="sapBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด Preview เพื่อดูตัวอย่าง</td></tr></tbody>' +
+          '</table>' +
+        '</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<h3 onclick="toggleBulkSAP()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between">' +
+          '<span><i class="bi bi-files"></i> Bulk Export</span>' +
+          '<span><button class="btn btn-ghost btn-sm" id="bulkSapToggle" onclick="event.stopPropagation();toggleBulkSAP()"><i class="bi bi-plus-circle"></i> Bulk Export</button></span>' +
+        '</h3>' +
+        '<div id="bulkSapSection" style="display:none">' +
+          '<div class="btn-row" style="margin-bottom:10px">' +
+            '<button class="btn btn-pri" onclick="loadBulkSAPPeriods()"><i class="bi bi-arrow-repeat"></i> โหลดงวดที่มีข้อมูล</button>' +
+            '<span id="bulkSapCount" style="font-size:11px;color:var(--mt);margin-left:8px"></span>' +
+          '</div>' +
+          '<div id="loaderBulkSAP" class="loader hidden">⏳ กำลังโหลดงวด...</div>' +
+          '<div class="tw" style="max-height:400px;overflow:auto;margin-top:4px">' +
+            '<table class="tb" id="bulkSapTable">' +
+              '<thead>' +
+                '<tr>' +
+                  '<th style="width:36px;text-align:center"><input type="checkbox" id="bulkSapSelectAll" onchange="onBulkSAPSelectAll()" title="เลือกทั้งหมด"></th>' +
+                  '<th>Period</th>' +
+                  '<th class="num">Status</th>' +
+                  '<th class="num">Docs</th>' +
+                  '<th class="num">Lines</th>' +
+                  '<th class="num">Amount (Dr=Cr)</th>' +
+                '</tr>' +
+              '</thead>' +
+              '<tbody id="bulkSapBody">' +
+                '<tr><td colspan="6" style="text-align:center;color:var(--mt)">กด "โหลดงวดที่มีข้อมูล" เพื่อแสดงรายการ</td></tr>' +
+              '</tbody>' +
+            '</table>' +
+          '</div>' +
+          '<div class="btn-row" style="margin-top:8px">' +
+            '<button class="btn btn-ghost btn-sm" onclick="onBulkSAPSelectAll()">Select All</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="onBulkSAPClearAll()">Clear</button>' +
+            '<span id="bulkSapSelectedCount" style="font-size:11px;color:var(--mt);margin-left:8px">0 งวด</span>' +
+            '<div class="sp"></div>' +
+            '<button class="btn btn-pri" onclick="previewBulkSAP()"><i class="bi bi-eye"></i> Preview</button>' +
+            '<button class="btn btn-gn" onclick="exportBulkSAP()"><i class="bi bi-file-earmark-excel"></i> Execute Bulk Export</button>' +
+          '</div>' +
+          '<div id="loaderBulkSAPExec" class="loader hidden">⏳ กำลังสร้าง Bulk Export...</div>' +
+          '<div class="result-box" id="resultBulkSAP"></div>' +
+          '<div class="card" id="bulkSapResultCard" style="display:none;margin-top:10px">' +
+            '<h3><i class="bi bi-journal-text"></i> Bulk Export Results</h3>' +
+            '<div id="bulkSapSummary" style="margin-bottom:10px"></div>' +
+            '<div class="tw" style="max-height:400px;overflow:auto">' +
+              '<table class="tb">' +
+                '<thead><tr><th>Period</th><th>Status</th><th class="num">Docs</th><th class="num">Lines</th><th class="num">Dr = Cr</th><th>Links</th></tr></thead>' +
+                '<tbody id="bulkSapResultsBody"></tbody>' +
+              '</table>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>',
+    
+    checker: '<div class="ph"><div class="pt">Pre-Upload Checker</div><div class="ps">ตรวจสอบข้อมูลก่อน Export SAP — ระบบจะเช็คความถูกต้องของข้อมูลทั้งหมด</div></div>' +
+      '<div class="card">' +
+        '<h3><i class="bi bi-shield-check"></i> Validation Checks (10 รายการ)</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:12px">' +
+          '<div>✅ 1. Doc No ครบ</div><div>✅ 2. Doc No ซ้ำ</div><div>✅ 3. IO ครบ</div><div>✅ 4. GL ครบ</div>' +
+          '<div>✅ 5. วันที่เริ่มต้น</div><div>✅ 6. วันที่สิ้นสุด</div><div>✅ 7. วันที่เริ่มต้น ≤ สิ้นสุด</div>' +
+          '<div>✅ 8. วันที่สิ้นสุดผ่านไปแล้ว</div><div>✅ 9. ยอดเงิน > 0</div>' +
+          '<div>✅ 10. Amortization มียอดคงเหลือ</div>' +
+        '</div>' +
+        '<div class="btn-row"><button class="btn btn-pri" onclick="runChecker()"><i class="bi bi-play-fill"></i> Run Check</button></div>' +
+      '</div>' +
+      '<div id="loaderChecker" class="loader hidden">⏳ กำลังตรวจสอบข้อมูล 3,979 รายการ...</div>' +
+      '<div id="checkerResult" style="display:none">' +
+        '<div class="card" id="checkerSummary">' +
+          '<h3><i class="bi bi-clipboard-data"></i> Result Summary</h3>' +
+          '<div class="kpi-grid">' +
+            '<div class="kpi"><div class="kv" id="cTotalItems">—</div><div class="kl">รายการที่เช็ค</div></div>' +
+            '<div class="kpi gn"><div class="kv" id="cPassed">—</div><div class="kl">ผ่าน</div></div>' +
+            '<div class="kpi rd"><div class="kv" id="cErrors">—</div><div class="kl">Errors</div></div>' +
+            '<div class="kpi bl"><div class="kv" id="cWarnings">—</div><div class="kl">Warnings</div></div>' +
+          '</div>' +
+          '<div id="cStatusBadge" style="margin-top:8px"></div>' +
+        '</div>' +
+        '<div class="card" id="checkerErrorCard" style="display:none">' +
+          '<h3 style="color:var(--rd)"><i class="bi bi-x-circle"></i> Errors</h3>' +
+          '<div class="tw" style="max-height:300px;overflow:auto"><table class="tb"><thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead><tbody id="cErrorBody"></tbody></table></div>' +
+        '</div>' +
+        '<div class="card" id="checkerWarnCard" style="display:none">' +
+          '<h3 style="color:var(--gold)"><i class="bi bi-exclamation-triangle"></i> Warnings</h3>' +
+          '<div class="tw" style="max-height:300px;overflow:auto"><table class="tb"><thead><tr><th>Row</th><th>Field</th><th>Message</th></tr></thead><tbody id="cWarnBody"></tbody></table></div>' +
+        '</div>' +
+        '<div class="card"><h3><i class="bi bi-cpu"></i> Amortization Sample Check</h3><div id="cAmortCheck" style="font-size:12px">—</div></div>' +
+      '</div>',
+    
+    void: '<div class="ph"><div class="pt">Void / Terminate</div><div class="ps">ยกเลิกสัญญากลางคัน — คำนวณ remaining balance และสร้าง Void Journal Entry</div></div>' +
+      '<div class="card" style="padding:12px 20px">' +
+        '<div class="btn-row" style="margin:0">' +
+          '<button class="btn btn-pri" id="voidModeVoid" onclick="setVoidMode(\'void\')">⛔ Void</button>' +
+          '<button class="btn btn-ghost" id="voidModeBatch" onclick="setVoidMode(\'batch\')">📋 Batch Void</button>' +
+          '<button class="btn btn-ghost" id="voidModeModify" onclick="setVoidMode(\'modify\')">✏️ Modify</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="voidModeContent">' +
+        '<div class="card"><h3><i class="bi bi-search"></i> เลือกเอกสาร</h3>' +
+        '<div class="fg"><label>Doc No</label><select class="sel" id="voidDocNo" onchange="onVoidDocSelect()" style="font-family:\'JetBrains Mono\',mono;max-width:100%"><option value="">— เลือกเลขที่ DOC —</option></select></div>' +
+        '<div id="voidDocInfo" class="hidden" style="margin-top:10px">' +
+          '<div class="kpi-grid">' +
+            '<div class="kpi"><div class="kv" id="vDocNo">—</div><div class="kl">Doc No</div></div>' +
+            '<div class="kpi bl"><div class="kv" id="vAmount">—</div><div class="kl">ยอดรวม</div></div>' +
+            '<div class="kpi gn"><div class="kv" id="vAmortized">—</div><div class="kl">ตัดจ่ายแล้ว</div></div>' +
+            '<div class="kpi rd"><div class="kv" id="vRemaining">—</div><div class="kl">คงเหลือ</div></div>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--mt);margin-top:4px">' +
+            'Doc No 2: <span id="vDocNo2" style="font-family:JetBrains Mono,mono"></span> · ' +
+            '<span id="vDesc"></span> · <span id="vPlate"></span> · ' +
+            'IO: <span id="vIo" style="font-family:JetBrains Mono,mono"></span> · ' +
+            'GL: <span id="vGl" style="font-family:JetBrains Mono,mono"></span> · ' +
+            'GL Name: <span id="vGlName"></span> · ' +
+            'Cost: <span id="vCostName"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div id="loaderVoidDoc" class="loader hidden">⏳ กำลังโหลด...</div>' +
+        '</div>' +
+        '<div class="card" id="voidFormCard" style="display:none">' +
+          '<h3><i class="bi bi-pencil"></i> รายละเอียดการยกเลิก</h3>' +
+          '<div class="fg"><label>Void Date</label><input class="fi" id="voidDate" type="date" style="max-width:200px;font-family:\'Prompt\',sans-serif"></div>' +
+          '<div class="fg"><label>ประเภท</label><select class="sel" id="voidType" onchange="onVoidTypeChange()" style="max-width:200px"><option value="refund">คืนเงิน (Refund)</option><option value="loss">ตัดสูญ (Loss)</option></select></div>' +
+          '<div class="fg hidden" id="voidLossGlRow"><label>Loss GL</label><input class="fi" id="voidLossGL" value="51990010" style="max-width:200px;font-family:JetBrains Mono,mono"></div>' +
+          '<div class="btn-row"><button class="btn btn-pri" onclick="voidPreview()"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-rd" onclick="voidExecute()"><i class="bi bi-x-circle"></i> Execute Void</button></div>' +
+        '</div>' +
+        '<div id="loaderVoid" class="loader hidden">⏳ กำลังดำเนินการ...</div>' +
+        '<div class="result-box" id="resultVoid"></div>' +
+        '<div class="card" id="voidResultCard" style="display:none">' +
+          '<h3><i class="bi bi-journal-text"></i> Void Journal Entry</h3>' +
+          '<div class="tw"><table class="tb"><thead><tr><th>Line</th><th>GL Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Key</th><th>Description</th></tr></thead><tbody id="voidJeBody"></tbody></table></div>' +
+          '<div class="btn-row" style="margin-top:10px" id="voidResultLinks"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="batchVoidModeContent" style="display:none">' +
+        '<div class="card"><h3><i class="bi bi-list-check"></i> Batch Void Mode — เลือกหลายรายการ</h3>' +
+        '<div class="fg"><label>Void Date</label><input class="fi" id="batchVoidDate" type="date" style="max-width:200px;font-family:\'Prompt\',sans-serif"></div>' +
+        '<div class="fg"><label>ประเภท</label><select class="sel" id="batchVoidType" onchange="onBatchVoidTypeChange()" style="max-width:200px"><option value="refund">คืนเงิน (Refund)</option><option value="loss">ตัดสูญ (Loss)</option></select></div>' +
+        '<div class="fg hidden" id="batchVoidLossGlRow"><label>Loss GL</label><input class="fi" id="batchVoidLossGL" value="51990010" style="max-width:200px;font-family:JetBrains Mono,mono"></div>' +
+        '<div class="btn-row" style="margin-bottom:10px"><button class="btn btn-pri" onclick="loadBatchVoidDocs()"><i class="bi bi-arrow-repeat"></i> โหลดรายการเอกสาร</button><span id="batchVoidCount" style="font-size:11px;color:var(--mt);margin-left:8px"></span></div>' +
+        '<div id="loaderBatchVoid" class="loader hidden">⏳ กำลังโหลดรายการ...</div>' +
+        '<div id="batchVoidPagWrap" style="margin-bottom:6px"></div>' +
+        '<div class="tw" style="max-height:400px;overflow:auto;margin-top:4px">' +
+          '<table class="tb" id="batchVoidTable"><thead><tr><th style="width:36px;text-align:center"><input type="checkbox" id="batchVoidSelectAll" onchange="onBatchVoidSelectAll()" title="เลือกทั้งหมด"></th><th>Doc No</th><th>Doc No 2</th><th>รายการ</th><th>Plate</th><th class="num">ยอดรวม</th></tr></thead><tbody id="batchVoidBody"><tr><td colspan="6" style="text-align:center;color:var(--mt)">กด "โหลดรายการเอกสาร" เพื่อแสดงรายการ</td></tr></tbody></table>' +
+        '</div>' +
+        '<div class="btn-row" style="margin-top:10px"><button class="btn btn-pri" onclick="batchVoidPreview()"><i class="bi bi-eye"></i> ตรวจสอบรายการที่เลือก</button><button class="btn btn-rd" onclick="batchVoidExecute()"><i class="bi bi-x-circle"></i> Execute Batch Void</button></div>' +
+      '</div>' +
+      '<div id="loaderBatchVoidExec" class="loader hidden">⏳ กำลังดำเนินการ Batch Void...</div>' +
+      '<div class="result-box" id="resultBatchVoid"></div>' +
+      '<div class="card" id="batchVoidResultCard" style="display:none"><h3><i class="bi bi-journal-text"></i> Batch Void Results</h3><div id="batchVoidSummary" style="margin-bottom:10px"></div><div class="tw" style="max-height:400px;overflow:auto"><table class="tb"><thead><tr><th>#</th><th>Doc No</th><th>สถานะ</th><th>รายละเอียด</th><th class="num">จำนวนเงิน</th><th>JE Ref</th></tr></thead><tbody id="batchVoidResultsBody"></tbody></table></div></div>' +
+      '<div id="modifyModeContent" style="display:none">' +
+        '<div class="card"><h3><i class="bi bi-search"></i> เลือกเอกสารที่จะแก้ไข</h3><div class="fg"><label>Doc No</label><select class="sel" id="modifyDocNo" onchange="onModifyDocSelect()" style="font-family:\'JetBrains Mono\',mono;max-width:100%"><option value="">— เลือกเลขที่ DOC —</option></select></div><div id="modifyDocInfo" class="hidden" style="margin-top:10px"><div style="font-size:11px;color:var(--mt);margin-bottom:8px"><strong id="modVDocNo"></strong> · <span id="modVDesc"></span> · IO: <span id="modVIo"></span> · GL: <span id="modVGl"></span></div><div id="loaderModifyDoc" class="loader hidden">⏳ กำลังโหลด...</div></div>' +
+        '<div class="card" id="modifyFormCard" style="display:none"><h3><i class="bi bi-pencil"></i> แก้ไขรายการ (Edit Prepaid Record)</h3><div class="fg"><label>Start Date (วันที่เริ่มต้น)</label><input class="fi" id="modStartDate" type="date" style="max-width:220px;font-family:\'Prompt\',sans-serif"></div><div class="fg"><label>End Date (วันที่สิ้นสุด)</label><input class="fi" id="modEndDate" type="date" style="max-width:220px;font-family:\'Prompt\',sans-serif"></div><div class="fg"><label>Amount (จำนวนเงิน)</label><input class="fi" id="modAmount" type="number" step="0.01" min="0" style="max-width:220px;font-family:JetBrains Mono,mono"></div><div class="btn-row" style="margin-top:6px"><button class="btn btn-pri" onclick="calculateNewSchedule()"><i class="bi bi-calculator"></i> Calculate — ดูตารางใหม่</button><button class="btn btn-gn" onclick="saveModifiedRecord()" id="modSaveBtn"><i class="bi bi-save"></i> Save Changes</button></div><div id="loaderModifyCalc" class="loader hidden">⏳ กำลังคำนวณ...</div><div id="loaderModifySave" class="loader hidden">⏳ กำลังบันทึก...</div></div>' +
+        '<div id="modifyComparison" style="display:none">' +
+          '<div class="card"><h3><i class="bi bi-arrow-left-right"></i> Summary — Old vs New</h3><div class="kpi-grid">' +
+            '<div class="kpi"><div class="kv" style="font-size:14px" id="modCompareOldAmount">—</div><div class="kl">Old Amount</div></div>' +
+            '<div class="kpi gn"><div class="kv" style="font-size:14px" id="modCompareNewAmount">—</div><div class="kl">New Amount</div></div>' +
+            '<div class="kpi"><div class="kv" style="font-size:14px" id="modCompareOldStart">—</div><div class="kl">Old Start Date</div></div>' +
+            '<div class="kpi gn"><div class="kv" style="font-size:14px" id="modCompareNewStart">—</div><div class="kl">New Start Date</div></div>' +
+            '<div class="kpi"><div class="kv" style="font-size:14px" id="modCompareOldEnd">—</div><div class="kl">Old End Date</div></div>' +
+            '<div class="kpi gn"><div class="kv" style="font-size:14px" id="modCompareNewEnd">—</div><div class="kl">New End Date</div></div>' +
+            '<div class="kpi bl"><div class="kv" style="font-size:14px" id="modCompareOldRows">—</div><div class="kl">Old Schedule Rows</div></div>' +
+            '<div class="kpi bl"><div class="kv" style="font-size:14px" id="modCompareNewRows">—</div><div class="kl">New Schedule Rows</div></div>' +
+            '<div class="kpi rd"><div class="kv" style="font-size:14px" id="modCompareOldRemaining">—</div><div class="kl">Old Remaining</div></div>' +
+            '<div class="kpi gn"><div class="kv" style="font-size:14px" id="modCompareNewRemaining">—</div><div class="kl">New Remaining</div></div>' +
+          '</div></div>' +
+          '<div class="result-box" id="modifyCompareResult"><h3 style="font-size:12px;font-weight:500;margin-bottom:8px">📊 Amortization Schedule Comparison</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><div style="font-size:11px;font-weight:500;color:var(--mt);margin-bottom:4px;text-align:center">⚠️ OLD Schedule (current)</div><div class="tw" style="max-height:300px;overflow:auto"><table class="tb" style="font-size:10px"><thead><tr><th>Period</th><th class="num">Days</th><th class="num">Amount</th><th class="num">Accum</th><th class="num">Remain</th></tr></thead><tbody id="modOldScheduleBody"></tbody></table></div></div><div><div style="font-size:11px;font-weight:500;color:var(--gn);margin-bottom:4px;text-align:center">✅ NEW Schedule (modified)</div><div class="tw" style="max-height:300px;overflow:auto"><table class="tb" style="font-size:10px"><thead><tr><th>Period</th><th class="num">Days</th><th class="num">Amount</th><th class="num">Accum</th><th class="num">Remain</th></tr></thead><tbody id="modNewScheduleBody"></tbody></table></div></div></div></div>' +
+      '</div>',
+    
+    periodclose: '<div class="ph"><div class="pt">🔒 Period-Close</div><div class="ps">ปิดงวด — ตรวจสอบรายการ checklist และล็อคงวดเมื่อพร้อม</div></div>' +
+      '<div class="card"><div class="fg"><label>งวด</label><input class="fi" id="pcPeriod" placeholder="YYYY-MM" style="max-width:180px;font-family:JetBrains Mono,mono"></div><div class="btn-row"><button class="btn btn-pri" onclick="loadPeriodChecklist()"><i class="bi bi-arrow-repeat"></i> โหลด Checklist</button><button class="btn btn-ghost" onclick="loadPeriodStatusHistory()"><i class="bi bi-clock-history"></i> ประวัติการปิดงวด</button></div></div>' +
+      '<div id="pcStatusBadge" style="display:none;margin-bottom:12px"></div>' +
+      '<div id="pcChecklistCard" style="display:none"><div class="card"><h3><i class="bi bi-list-check"></i> Close Checklist — <span id="pcChecklistPeriod"></span></h3><div id="pcChecklistItems" style="margin-bottom:14px"></div><div class="btn-row" id="pcCloseBtnRow"><button class="btn btn-gn" id="pcCloseBtn" onclick="executeClosePeriod()" disabled><i class="bi bi-lock-fill"></i> Close Period</button><button class="btn btn-rd" id="pcReopenBtn" onclick="executeReopenPeriod()" style="display:none"><i class="bi bi-unlock-fill"></i> Reopen Period</button></div><div style="margin-top:10px"><label style="font-size:11px;color:var(--mt);display:block;margin-bottom:4px">หมายเหตุ (optional)</label><input class="fi" id="pcNotes" placeholder="บันทึกหมายเหตุการปิดงวด" style="width:100%;max-width:400px"></div></div></div>' +
+      '<div id="pcHistoryCard" style="display:none"><div class="card"><h3><i class="bi bi-clock-history"></i> Period Status History</h3><div class="tw" style="max-height:400px;overflow:auto"><table class="tb"><thead><tr><th>Period</th><th>สถานะ</th><th>ปิดโดย</th><th>เวลาที่ปิด</th><th>Pre-Check</th><th>Amort</th><th>SAP JE</th><th>Void</th><th>หมายเหตุ</th></tr></thead><tbody id="pcHistoryBody"><tr><td colspan="9" style="text-align:center;color:var(--mt)">กด "ประวัติการปิดงวด" เพื่อดูข้อมูล</td></tr></tbody></table></div></div></div>' +
+      '<div id="loaderPeriodClose" class="loader hidden">⏳ กำลังดำเนินการ...</div><div class="result-box" id="resultPeriodClose"></div>',
+    
+    approvals: '<div class="ph"><div class="pt">✅ Approvals</div><div class="ps">ส่งขออนุมัติตัดจ่าย — อนุมัติเพื่อรัน Amortization อัตโนมัติ</div></div>' +
+      '<div class="card" style="padding:12px 20px"><div class="btn-row" style="margin:0"><button class="btn btn-pri" id="approvalTabMy" onclick="setApprovalTab(\'my\')">📋 My Requests</button><button class="btn btn-ghost" id="approvalTabPending" onclick="setApprovalTab(\'pending\')">⏳ Pending <span id="pendingBadge" style="display:none;background:var(--rd);color:#fff;border-radius:10px;padding:1px 6px;font-size:9px;margin-left:3px"></span></button><button class="btn btn-ghost" id="approvalTabHistory" onclick="setApprovalTab(\'history\')">📜 History</button></div></div>' +
+      '<div id="approvalMyContent"><div class="card"><h3><i class="bi bi-send"></i> Submit for Approval</h3><div class="fg"><label>เลือกเอกสาร</label><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-pri btn-sm" onclick="loadApprovalDocList()"><i class="bi bi-arrow-repeat"></i> โหลดรายการเอกสาร</button><span id="approvalDocCount" style="font-size:11px;color:var(--mt)"></span></div><div class="tw" style="max-height:250px;overflow:auto;margin-bottom:8px"><table class="tb" id="approvalDocTable"><thead><tr><th style="width:36px;text-align:center"><input type="checkbox" id="approvalSelectAll" onchange="onApprovalSelectAll()"></th><th>Doc No</th><th>Doc No 2</th><th>รายการ</th><th>Plate</th></tr></thead><tbody id="approvalDocBody"><tr><td colspan="5" style="text-align:center;color:var(--mt)">กด "โหลดรายการเอกสาร"</td></tr></tbody></table></div></div><div class="fg"><label>หมายเหตุ</label><input class="fi" id="approvalNotes" placeholder="หมายเหตุ (optional)" style="width:100%;max-width:400px"></div><div class="btn-row"><button class="btn btn-pri" onclick="executeSubmitApproval()"><i class="bi bi-send"></i> Submit for Approval</button></div></div><div class="card"><h3><i class="bi bi-inbox"></i> My Submitted Requests</h3><div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="loadMyRequests()"><i class="bi bi-arrow-repeat"></i> โหลด</button></div><div class="tw" style="max-height:400px;overflow:auto;margin-top:8px"><table class="tb"><thead><tr><th>Request ID</th><th>สถานะ</th><th>วันที่ส่ง</th><th>จำนวนเอกสาร</th><th>งวด</th><th>ผู้อนุมัติ</th></tr></thead><tbody id="approvalMyBody"><tr><td colspan="6" style="text-align:center;color:var(--mt)">กด "โหลด" เพื่อดูรายการ</td></tr></tbody></table></div></div></div>' +
+      '<div id="approvalPendingContent" style="display:none"><div class="card"><h3><i class="bi bi-hourglass-split"></i> Pending Approvals</h3><div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="loadPendingApprovals()"><i class="bi bi-arrow-repeat"></i> โหลด</button></div><div id="approvalPendingList" style="margin-top:8px"></div><div id="approvalNoPending" style="display:none;text-align:center;padding:20px;color:var(--mt);font-size:12px">✅ ไม่มีรายการรออนุมัติ</div></div></div>' +
+      '<div id="approvalHistoryContent" style="display:none"><div class="card"><h3><i class="bi bi-journal-text"></i> Approval History</h3><div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="loadApprovalHistory()"><i class="bi bi-arrow-repeat"></i> โหลด</button></div><div class="tw" style="max-height:500px;overflow:auto;margin-top:8px"><table class="tb"><thead><tr><th>Request ID</th><th>สถานะ</th><th>วันที่ส่ง</th><th>ส่งโดย</th><th>จำนวนเอกสาร</th><th>งวด</th><th>ผู้อนุมัติ/ผู้ปฏิเสธ</th><th>เหตุผล</th></tr></thead><tbody id="approvalHistoryBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด "โหลด" เพื่อดูประวัติ</td></tr></tbody></table></div></div></div>' +
+      '<div id="loaderApproval" class="loader hidden">⏳ กำลังดำเนินการ...</div><div class="result-box" id="resultApproval"></div>',
+    
+    glrecon: '<div class="ph"><div class="pt">📊 GL Reconciliation</div><div class="ps">เปรียบเทียบ GL Balance จาก SAP กับยอดตัดจ่ายในระบบ — Period: <span id="glreconPeriodDisplay" style="font-family:JetBrains Mono,mono">—</span></div></div>' +
+      '<div class="card" style="padding:12px 20px"><div class="btn-row" style="margin:0;flex-wrap:wrap;gap:8px"><label style="font-size:11px;color:var(--mt);display:flex;align-items:center;gap:6px">งวด<input class="fi" id="glreconPeriod" placeholder="YYYY-MM" style="max-width:130px;font-family:JetBrains Mono,mono"></label><button class="btn btn-pri" onclick="loadGLRecon()"><i class="bi bi-arrow-repeat"></i> โหลด</button><span id="glreconStatus" style="font-size:11px;color:var(--mt);margin-left:4px"></span></div></div>' +
+      '<div class="card" style="padding:10px 16px"><div class="btn-row" style="margin:0;gap:6px"><button class="btn btn-pri" id="glreconTabInput" onclick="setGLReconTab(\'input\')"><i class="bi bi-pencil"></i> Input GL Balances</button><button class="btn btn-ghost" id="glreconTabRecon" onclick="setGLReconTab(\'recon\')"><i class="bi bi-search"></i> Reconciliation</button><button class="btn btn-ghost" id="glreconTabHistory" onclick="setGLReconTab(\'history\')"><i class="bi bi-clock-history"></i> History</button></div></div>' +
+      '<div id="glreconInputContent"><div class="card"><h3><i class="bi bi-table"></i> GL Balance Entry</h3><p style="font-size:11px;color:var(--mt);margin-bottom:8px">ระบบโหลดบัญชี GL ทั้งหมดจากระบบมาให้อัตโนมัติ กรอกยอด GL Balance จาก SAP ในช่อง "GL Balance"</p><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-gn" onclick="saveGLBalances()"><i class="bi bi-save"></i> Save GL Balances</button><button class="btn btn-ghost btn-sm" onclick="addGLBalanceRow()"><i class="bi bi-plus-circle"></i> Add GL</button><button class="btn btn-ghost btn-sm" onclick="loadGLBalances()"><i class="bi bi-arrow-repeat"></i> Reload from Saved</button><span id="glreconBalanceCount" style="font-size:10px;color:var(--mt);margin-left:auto;align-self:center"></span></div><div class="tw" style="max-height:450px;overflow:auto"><table class="tb" id="glreconBalanceTable"><thead><tr><th>GL Code</th><th>GL Name</th><th class="num">System Amount (Total)</th><th class="num">GL Balance (SAP)</th><th style="width:40px"></th></tr></thead><tbody id="glreconBalanceBody"><tr id="glreconBalanceEmpty"><td colspan="5" style="text-align:center;color:var(--mt);padding:20px">⏳ กำลังโหลด GL accounts...</td></tr></tbody></table></div><div style="margin-top:8px;font-size:11px;color:var(--mt);text-align:right">Total System: ฿<span id="glreconSystemTotal">0.00</span> | Total GL Balance: ฿<span id="glreconEnteredTotal">0.00</span></div></div></div>' +
+      '<div id="glreconReconContent" style="display:none"><div class="card"><h3><i class="bi bi-search"></i> Reconciliation Results</h3><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-pri" onclick="runGLRecon()"><i class="bi bi-play-fill"></i> Run Reconciliation</button><button class="btn btn-ghost" onclick="exportGLReconReport()"><i class="bi bi-download"></i> Export Report</button></div><div id="loaderGLRecon" class="loader hidden">⏳ กำลังประมวลผล...</div><div class="result-box" id="resultGLRecon"></div><div id="glreconReconResults" style="display:none"><div class="kpi-grid" id="glreconReconKpis"><div class="kpi"><div class="kv" id="glreconGLBalanceTotal">—</div><div class="kl">Total GL Balance</div></div><div class="kpi bl"><div class="kv" id="glreconSystemTotalKpi">—</div><div class="kl">Total System Amort</div></div><div class="kpi" id="glreconDiffCard"><div class="kv" id="glreconDifferenceTotal">—</div><div class="kl">Difference</div></div></div><div class="tw" style="max-height:500px;overflow:auto"><table class="tb" id="glreconReconTable"><thead><tr><th>GL Code</th><th>GL Name</th><th class="num">GL Balance</th><th class="num">System Total</th><th class="num">Difference</th><th class="num">% Diff</th><th>Status</th></tr></thead><tbody id="glreconReconBody"><tr><td colspan="7" style="text-align:center;color:var(--mt)">กด "Run Reconciliation" เพื่อดูผล</td></tr></tbody></table></div></div></div>' +
+      '<div id="glreconHistoryContent" style="display:none"><div class="card"><h3><i class="bi bi-clock-history"></i> Reconciliation History</h3><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" onclick="loadGLReconHistory()"><i class="bi bi-arrow-repeat"></i> โหลด</button></div><div class="tw" style="max-height:500px;overflow:auto"><table class="tb"><thead><tr><th>ID</th><th>Period</th><th>Ran At</th><th>Ran By</th><th class="num">GL Balance</th><th class="num">System</th><th class="num">Diff</th><th>Status</th></tr></thead><tbody id="glreconHistoryBody"><tr><td colspan="8" style="text-align:center;color:var(--mt)">กด "โหลด" เพื่อดูประวัติ</td></tr></tbody></table></div></div></div>' +
+      '<div id="loaderGLReconGlobal" class="loader hidden">⏳ กำลังดำเนินการ...</div><div class="result-box" id="resultGLReconExport" style="margin-top:8px"></div>',
+    
+    budget: '<div class="ph"><div class="pt">💰 Budget vs Actual</div><div class="ps">จัดการงบประมาณและเปรียบเทียบกับยอดตัดจ่ายจริง</div></div>' +
+      '<div class="card" style="padding:12px 20px"><div class="btn-row" style="margin:0;flex-wrap:wrap;gap:8px"><label style="font-size:11px;color:var(--mt);display:flex;align-items:center;gap:6px">งวด<input class="fi" id="budgetPeriod" placeholder="YYYY-MM" style="max-width:130px;font-family:JetBrains Mono,mono"></label><button class="btn btn-pri" onclick="loadBudgetData()"><i class="bi bi-arrow-repeat"></i> โหลดงบประมาณ</button><button class="btn btn-gn" onclick="saveBudgetData()"><i class="bi bi-save"></i> Save Budget</button><button class="btn btn-bl" onclick="loadBudgetVsActual()"><i class="bi bi-bar-chart"></i> View vs Actual</button><span id="budgetStatus" style="font-size:11px;color:var(--mt);margin-left:4px"></span></div></div>' +
+      '<div class="card"><h3><i class="bi bi-list-ul"></i> Budget Line Items</h3><div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="addBudgetRow()"><i class="bi bi-plus-circle"></i> Add Row</button><button class="btn btn-ghost btn-sm" onclick="deleteSelectedBudgetRows()"><i class="bi bi-trash3"></i> Delete Selected</button><span id="budgetItemCount" style="font-size:10px;color:var(--mt);margin-left:auto;align-self:center"></span></div><div class="tw" style="max-height:400px;overflow:auto"><table class="tb" id="budgetTable"><thead><tr><th style="width:30px"><input type="checkbox" id="budgetSelectAll" onchange="budgetSelectAllToggle()"></th><th>GL</th><th>Cost Center</th><th>Description</th><th class="num">Budget Amount</th></tr></thead><tbody id="budgetBody"><tr id="budgetEmptyRow"><td colspan="5" style="text-align:center;color:var(--mt);padding:20px">เลือกงวดแล้วกด "โหลดงบประมาณ" หรือ <a href="#" onclick="addBudgetRow();return false" style="color:var(--gold)">เพิ่มรายการ</a></td></tr></tbody></table></div><div style="margin-top:8px;font-size:11px;color:var(--mt);text-align:right">Total: ฿<span id="budgetTotal">0.00</span></div></div>' +
+      '<div class="result-box" id="resultBudgetVsActual"><h3 style="font-size:12px;font-weight:500;margin-bottom:8px">📊 Budget vs Actual — <span id="bvaPeriod"></span></h3><div class="kpi-grid" id="bvaKpis"><div class="kpi"><div class="kv" style="font-size:14px" id="bvaBudget">—</div><div class="kl">Total Budget</div></div><div class="kpi gn"><div class="kv" style="font-size:14px" id="bvaActual">—</div><div class="kl">Total Actual</div></div><div class="kpi" id="bvaVarianceCard"><div class="kv" style="font-size:14px" id="bvaVariance">—</div><div class="kl">Variance</div></div><div class="kpi" id="bvaPctCard"><div class="kv" style="font-size:14px" id="bvaPct">—</div><div class="kl">% Used</div></div></div><div id="bvaChartWrap" class="chart-wrap-sm" style="margin-bottom:10px"><canvas id="bvaChart"></canvas></div><div class="tw" style="max-height:400px;overflow:auto"><table class="tb" id="bvaTable"><thead><tr><th>GL</th><th>Cost Center</th><th>Description</th><th class="num">Budget (฿)</th><th class="num">Actual (฿)</th><th class="num">Variance (฿)</th><th class="num">%</th></tr></thead><tbody id="bvaBody"><tr><td colspan="7" style="text-align:center;color:var(--mt)">กด "View vs Actual" เพื่อดูเปรียบเทียบ</td></tr></tbody></table></div></div>',
+    
+    settings: '<div class="ph"><div class="pt">Settings</div><div class="ps">ตั้งค่าระบบ</div></div>' +
+      '<div class="card"><h3><i class="bi bi-gear"></i> ตั้งค่าทั่วไป</h3><div class="fg"><label>Company</label><input class="fi" id="sCompany" value="1022"></div><div class="fg"><label>Prepaid GL</label><input class="fi" id="sPrepaidGL" value="11370010"></div><div class="fg"><label>Doc Type</label><input class="fi" id="sDocType" value="SA"></div><div class="fg"><label>Currency</label><input class="fi" id="sCurrency" value="THB"></div><div class="fg"><label>Max Lines/JE</label><input class="fi" id="sMaxLines" value="900"></div><div class="fg"><label>วิธีปัด Rate</label><select class="sel" id="sRounding"><option value="4dec">ปัด 4 ตำแหน่ง</option><option value="full">เต็มความละเอียด</option></select></div><div class="btn-row"><button class="btn btn-pri" onclick="saveSettings()"><i class="bi bi-save"></i> Save</button></div></div>',
+    
+    guide: '<div class="ph"><div class="pt">📖 User Guide</div><div class="ps">วิธีการใช้งานระบบ Prepaid Expense Amortization — ข้อมูลจาก Input Sheet, การทำงานแต่ละ Tab</div></div><div id="guideContent" class="loader">Loading...</div>',
+    
+    sync: '<div class="ph"><div class="pt">Sync Data</div><div class="ps">Data source synchronization status</div></div>' +
+      '<div class="card"><h3><i class="bi bi-database"></i> Data Source</h3><div class="kpi-grid" id="syncKpis"><div class="kpi bl"><div class="kv" id="syncSheetId">—</div><div class="kl">Sheet ID</div></div><div class="kpi gn"><div class="kv" id="syncRecords">—</div><div class="kl">Records</div></div><div class="kpi"><div class="kv" id="syncLastSync">—</div><div class="kl">Last Sync</div></div></div><div id="syncStatus" class="al al-ok" style="display:none"><i class="bi bi-check-circle"></i> <span id="syncStatusText">Ready</span></div><div class="btn-row"><button class="btn btn-pri" onclick="syncNow()"><i class="bi bi-arrow-repeat"></i> Sync Now</button></div><div id="loaderSync" class="loader hidden">⏳ Syncing...</div></div>' +
+      '<div class="card"><h3><i class="bi bi-upload"></i> Import CSV/Excel</h3><p style="font-size:12px;color:var(--mt);margin-bottom:10px">Import data from CSV or Excel (paste) into the source sheet. Go to <a href="#" onclick="go(\'import\');return false" style="color:var(--gold)">Import tab</a> for full import features.</p><textarea class="fi" id="syncImportText" placeholder="Paste CSV data here..." style="width:100%;min-height:80px;font-size:11px;font-family:\'JetBrains Mono\',mono;resize:vertical"></textarea><div class="btn-row" style="margin-top:8px"><button class="btn btn-pri btn-sm" onclick="syncImportQuickPreview()"><i class="bi bi-eye"></i> Quick Preview</button><button class="btn btn-gn btn-sm" onclick="go(\'import\')"><i class="bi bi-arrow-right"></i> Full Import</button></div><div id="syncImportResult" class="result-box" style="margin-top:8px"></div></div>',
+    
+    import: '<div class="ph"><div class="pt">📥 Import CSV/Excel</div><div class="ps">Paste CSV data, map columns, preview, and import into the source sheet</div></div>' +
+      '<div class="card"><h3><i class="bi bi-paste"></i> Step 1: Paste Your Data</h3><p style="font-size:11px;color:var(--mt);margin-bottom:8px">Copy data from Excel/CSV and paste below. First row should be column headers. Supports comma-separated (CSV) and tab-separated values.</p><textarea class="fi" id="importCsvText" placeholder="Paste CSV data here...\n\nExample:\nCompany,Posting Date,Doc Date,Doc No,Description,IO,GL,Cost Center,Start Date,End Date,Amount\n1022,2026-01-15,2026-01-10,INV001,Insurance Premium,400001,11370010,CC001,2026-01-01,2026-12-31,120000\n1022,2026-02-01,2026-01-28,INV002,Rent Payment,400002,11370010,CC002,2026-02-01,2027-01-31,240000" style="width:100%;min-height:160px;font-size:11px;font-family:\'JetBrains Mono\',mono;resize:vertical"></textarea><div class="btn-row" style="margin-top:8px"><button class="btn btn-pri" onclick="importPreview()" id="importPreviewBtn"><i class="bi bi-eye"></i> Preview</button><button class="btn btn-ghost" onclick="document.getElementById(\'importCsvText\').value=\'\';document.getElementById(\'importPreviewResult\').classList.remove(\'show\');document.getElementById(\'importConfirmBtn\').classList.add(\'hidden\');"><i class="bi bi-x-circle"></i> Clear</button></div></div>' +
+      '<div id="importPreviewResult" class="result-box"><div id="importPreviewContent"></div></div>' +
+      '<div id="loaderImport" class="loader hidden">⏳ Processing import data...</div>' +
+      '<div class="card"><h3 onclick="toggleImportHistory()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between"><span><i class="bi bi-clock-history"></i> Import History</span><span id="importHistoryToggle" style="font-size:12px;color:var(--mt);transition:transform .2s">▶</span></h3><div id="importHistoryBody" style="display:none"><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" onclick="loadImportHistory()"><i class="bi bi-arrow-repeat"></i> โหลด</button></div><div class="tw" style="max-height:300px;overflow:auto"><table class="tb"><thead><tr><th>Timestamp</th><th class="num">Imported</th><th class="num">Skipped</th><th class="num">Errors</th><th>User</th></tr></thead><tbody id="importHistoryTableBody"><tr><td colspan="5" style="text-align:center;color:var(--mt)">กด "โหลด" เพื่อดูประวัติ</td></tr></tbody></table></div></div></div>' +
+      '<div class="card"><h3><i class="bi bi-layout-text-window-reverse"></i> Column Mapping Reference</h3><p style="font-size:11px;color:var(--mt);margin-bottom:8px">Expected system fields and their default labels (Thai/English):</p><div class="tw"><table class="tb" style="font-size:10px"><thead><tr><th>System Field</th><th>Expected Labels</th></tr></thead><tbody><tr><td>company</td><td>Company, คู่สัญญา, บริษัท</td></tr><tr><td>postingDate</td><td>Posting Date, วันที่ลงบัญชี</td></tr><tr><td>docDate</td><td>Doc Date, วันที่เอกสาร</td></tr><tr><td>docNo</td><td>Doc No, เลขที่ DOC, เลขที่เอกสาร</td></tr><tr><td>docNo2</td><td>Doc No 2, เลขที่เพิ่มเติม</td></tr><tr><td>description</td><td>Description, รายการ, รายละเอียด</td></tr><tr><td>plate</td><td>Plate, ทะเบียนรถ</td></tr><tr><td>io</td><td>IO, รหัส IO (required)</td></tr><tr><td>glPrepaid</td><td>GL, GL Prepaid, รหัส GL (required)</td></tr><tr><td>costCenter</td><td>Cost Center, CC, ศูนย์ต้นทุน</td></tr><tr><td>startDate</td><td>Start Date, วันที่เริ่มต้น (required)</td></tr><tr><td>endDate</td><td>End Date, วันที่สิ้นสุด (required)</td></tr><tr><td>amount</td><td>Amount, จำนวนเงิน (required)</td></tr></tbody></table></div></div>',
+    
+    admin: '<div class="ph"><div class="pt">Admin Console</div><div class="ps">System administration and management</div></div>' +
+      '<div class="card"><h3><i class="bi bi-info-circle"></i> System Info</h3><div class="kpi-grid"><div class="kpi"><div class="kv" id="adminVersion">—</div><div class="kl">Version</div></div><div class="kpi bl"><div class="kv" id="adminRuntime">—</div><div class="kl">Runtime</div></div><div class="kpi gn"><div class="kv" id="adminDeploy">—</div><div class="kl">Deploy Version</div></div></div></div>' +
+      '<div class="card"><h3><i class="bi bi-trash"></i> Cache Management</h3><p style="font-size:12px;color:var(--mt);margin-bottom:10px">Clear server-side CacheService to force fresh data on next load.</p><div class="btn-row"><button class="btn btn-rd" onclick="clearCache()"><i class="bi bi-trash3"></i> Clear Cache</button></div><div id="loaderCache" class="loader hidden">⏳ Clearing cache...</div></div>' +
+      '<div class="card"><h3><i class="bi bi-lightning"></i> Quick Actions</h3><div class="btn-row"><button class="btn btn-ghost" onclick="tost(\'Quick action: Rebuild Index — coming soon\',\'\')"><i class="bi bi-arrow-repeat"></i> Rebuild Index</button><button class="btn btn-ghost" onclick="tost(\'Quick action: Export Audit — coming soon\',\'\')"><i class="bi bi-download"></i> Export Audit Log</button></div></div>' +
+      '<div class="card"><h3><i class="bi bi-calendar-event"></i> Monthly Auto-Run Trigger</h3><p style="font-size:12px;color:var(--mt);margin-bottom:10px">Automatically run month-end amortization on the 1st of each month at 8:00 AM.</p><div id="triggerStatusRow" class="kpi-grid" style="margin-bottom:10px"><div class="kpi" style="grid-column:1"><div class="kv" id="triggerStatusText" style="font-size:14px">—</div><div class="kl">Status</div></div><div class="kpi bl" style="grid-column:2"><div class="kv" id="triggerNextRun" style="font-size:13px;font-family:JetBrains Mono,mono">—</div><div class="kl">Next Run</div></div></div><div class="btn-row"><button class="btn btn-pri" id="triggerToggleBtn" onclick="toggleTrigger()"><i class="bi bi-play-circle"></i> Install Trigger</button></div><div id="loaderTrigger" class="loader hidden" style="margin-top:8px">⏳ Updating trigger...</div><div id="resultTrigger" class="result-box" style="margin-top:8px"></div></div>' +
+      '<div class="card"><h3><i class="bi bi-envelope"></i> Email Notifications</h3><p style="font-size:12px;color:var(--mt);margin-bottom:10px">Configure email notifications for amortization reports and expiration alerts.</p><div style="margin-bottom:10px"><label style="font-size:11px;color:var(--mt);display:block;margin-bottom:4px">Recipients (comma-separated emails):</label><input type="text" id="emailRecipients" style="width:100%;padding:7px 10px;background:var(--sf);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;font-family:Prompt,sans-serif;outline:none" placeholder="user@example.com, user2@example.com"></div><div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="emailSendOnAutoRun"> Send on auto-run completion</label><label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="emailSendWeeklyAlerts"> Send weekly expiration alerts</label></div><div class="btn-row" style="margin-bottom:8px"><button class="btn btn-pri" onclick="saveEmailConfig()"><i class="bi bi-save"></i> Save Config</button><button class="btn btn-gn" onclick="sendTestEmail()"><i class="bi bi-send"></i> Send Test Email</button><button class="btn btn-ghost" onclick="sendAmortReport()"><i class="bi bi-file-text"></i> Send Report Now</button></div><div id="resultEmail" class="result-box" style="margin-top:8px"></div><div id="loaderEmail" class="loader hidden" style="margin-top:8px">⏳ Sending email...</div></div>',
+    
+    audit: '<div class="ph"><div class="pt">Audit Log</div><div class="ps">System activity log</div></div>' +
+      '<div class="card"><h3><i class="bi bi-list-ul"></i> Log Entries</h3><div class="tw" style="max-height:500px;overflow:auto"><table class="tb"><thead><tr><th>Timestamp</th><th>Action</th><th>Detail</th></tr></thead><tbody id="auditBody"><tr><td colspan="3" style="text-align:center;color:var(--mt)">Loading...</td></tr></tbody></table></div></div>'
+  };
+  
+  // Section-specific init functions to call after loading
+  var sectionInitFunctions = {
+    amort: 'loadAmort',
+    schedule: 'loadSchedule',
+    sap: 'loadSAP',
+    checker: 'loadChecker',
+    void: 'loadVoidDocs',
+    periodclose: 'loadPeriodClose',
+    approvals: 'loadApprovals',
+    glrecon: 'loadGLRecon',
+    budget: 'loadBudgetData',
+    settings: 'loadSettings',
+    guide: 'loadGuide',
+    sync: 'loadSyncData',
+    import: 'loadImportPage',
+    admin: 'loadAdminConsole',
+    audit: 'loadAuditLog',
+    crud: 'loadCrudData'
+  };
+  
+  function loadSection(sectionName) {
+    if (loadedSections[sectionName]) {
+      return Promise.resolve();
+    }
+    
+    // Return existing promise if already loading
+    if (loadingPromises[sectionName]) {
+      return loadingPromises[sectionName];
+    }
+    
+    var promise = new Promise(function(resolve, reject) {
+      // Check cache first
+      var cached = sectionContentCache[sectionName];
+      if (cached) {
+        injectSection(sectionName, cached);
+        loadedSections[sectionName] = true;
+        delete loadingPromises[sectionName];
+        callInitFunction(sectionName);
+        resolve();
+        return;
+      }
+      
+      // Simulate async loading (in real app, this would be a fetch or dynamic import)
+      // Since we're embedding templates in JS, we just use setTimeout for async feel
+      setTimeout(function() {
+        var template = sectionTemplates[sectionName];
+        if (!template) {
+          reject(new Error('No template for section: ' + sectionName));
+          return;
+        }
+        
+        // Cache the template
+        sectionContentCache[sectionName] = template;
+        
+        injectSection(sectionName, template);
+        loadedSections[sectionName] = true;
+        delete loadingPromises[sectionName];
+        callInitFunction(sectionName);
+        resolve();
+      }, 0);
+    });
+    
+    loadingPromises[sectionName] = promise;
+    return promise;
+  }
+  
+  function injectSection(sectionName, html) {
+    var sectionEl = document.getElementById('sec' + sectionName.charAt(0).toUpperCase() + sectionName.slice(1));
+    if (sectionEl) {
+      sectionEl.innerHTML = html;
+    }
+  }
+  
+  function callInitFunction(sectionName) {
+    var fnName = sectionInitFunctions[sectionName];
+    if (fnName && typeof window[fnName] === 'function') {
+      // Defer to next tick to ensure DOM is ready
+      setTimeout(function() { window[fnName](); }, 0);
+    }
+  }
+  
+  // Preload critical data in parallel with UI render
+  function preloadCriticalData() {
+    // Pre-fetch dashboard data
+    if (typeof loadDashboard === 'function') {
+      setTimeout(loadDashboard, 0);
+    }
+    
+    // Preload user guide content (large static text)
+    PACache.set('userGuide', 'default', { preloaded: true, timestamp: Date.now() });
+    
+    // Preload settings
+    if (typeof loadSettings === 'function') {
+      // Settings loaded on demand when visiting settings page
+    }
+  }
+  
+  // Public API
+  return {
+    loadSection: loadSection,
+    preloadCriticalData: preloadCriticalData,
+    isLoaded: function(sectionName) { return !!loadedSections[sectionName]; }
+  };
+})();
+
 // ========== NAVIGATION ==========
 function go(p){
   // Convert page name to section id: first letter uppercase
   var sectionId = 'sec' + p.charAt(0).toUpperCase() + p.slice(1);
   var navId = 'nav-' + p;
-  // Hide all sections
-  document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
-  // Show target section
-  var secEl = document.getElementById(sectionId);
-  if(secEl) secEl.classList.add('active');
-  // Update sidebar nav
-  document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('on')});
-  var navEl = document.getElementById(navId);
-  if(navEl) navEl.classList.add('on');
-  // Update bottom nav
-  document.querySelectorAll('.bn-item').forEach(function(b){b.classList.remove('on')});
-  var bnMap = {dashboard:0, amort:1, sap:2, sync:3, import:4, admin:5, budget:6, settings:7};
-  var bnIdx = bnMap[p];
-  if(bnIdx !== undefined){
-    var items = document.querySelectorAll('.bn-item');
-    if(items[bnIdx]) items[bnIdx].classList.add('on');
+  
+  // Lazy load section if not already loaded (except dashboard which is pre-loaded)
+  var loadPromise = Promise.resolve();
+  if (p !== 'dashboard' && typeof LazySectionLoader !== 'undefined') {
+    loadPromise = LazySectionLoader.loadSection(p);
   }
-  // Close mobile nav
-  if(window.innerWidth <= 768){
-    var nav = document.querySelector('nav');
-    if(nav) nav.classList.remove('open');
-    var overlay = document.getElementById('navOverlay');
-    if(overlay) overlay.classList.remove('show');
-  }
-  // Load page-specific data
-  if(p==='dashboard') loadDashboard();
-  if(p==='void') loadVoidDocs();
-  if(p==='guide') loadGuide();
-  if(p==='sync') loadSyncData();
-  if(p==='admin') loadAdminConsole();
-  if(p==='audit') loadAuditLog();
-  if(p==='crud') loadCrudData();
-  if(p==='periodclose') loadPeriodClose();
-  if(p==='approvals') loadApprovals();
-  if(p==='budget') loadBudgetData();
-  if(p==='import') loadImportPage();
-  // if(p==='voidexpense') loadVoidExpense(); — removed: no section or function exists
-  if(p==='glrecon') loadGLRecon();
-  if(p==='settings') loadSettings();
-  if(p==='amort') loadAmort();
-  if(p==='schedule') loadSchedule();
-  if(p==='sap') loadSAP();
-  if(p==='checker') loadChecker();
+  
+  loadPromise.then(function() {
+    // Hide all sections
+    document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
+    // Show target section
+    var secEl = document.getElementById(sectionId);
+    if(secEl) secEl.classList.add('active');
+    // Update sidebar nav
+    document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('on')});
+    var navEl = document.getElementById(navId);
+    if(navEl) navEl.classList.add('on');
+    // Update bottom nav
+    document.querySelectorAll('.bn-item').forEach(function(b){b.classList.remove('on')});
+    var bnMap = {dashboard:0, amort:1, sap:2, sync:3, import:4, admin:5, budget:6, settings:7};
+    var bnIdx = bnMap[p];
+    if(bnIdx !== undefined){
+      var items = document.querySelectorAll('.bn-item');
+      if(items[bnIdx]) items[bnIdx].classList.add('on');
+    }
+    // Close mobile nav
+    if(window.innerWidth <= 768){
+      var nav = document.querySelector('nav');
+      if(nav) nav.classList.remove('open');
+      var overlay = document.getElementById('navOverlay');
+      if(overlay) overlay.classList.remove('show');
+    }
+  });
 }
 function switchTab(p){go(p);}
 
@@ -174,337 +1296,322 @@ window.addEventListener('resize', checkMobile);
 
 // ========== LOAD DASHBOARD ==========
 function loadDashboard(){
-  google.script.run.withSuccessHandler(function(r){
-    if(!r.ok){document.getElementById('dashSub').textContent='Error: '+(r.error||'');return}
-    // Existing KPIs
-    document.getElementById('dTotalItems').textContent=r.totalItems.toLocaleString();
-    document.getElementById('dTotalAmt').textContent=fmt(r.totalAmortization);
-    document.getElementById('dCurPeriod').textContent=r.currentPeriod;
-    document.getElementById('dashSub').textContent=r.totalItems.toLocaleString()+' รายการ · '+r.currentPeriod;
-    document.getElementById('statusTxt').textContent=r.totalItems+' rec';
-    document.getElementById('statusDot').className='dot g';
-    
-    // New KPI Row 1
-    document.getElementById('dActiveItems').textContent=r.activeItems!==undefined?r.activeItems.toLocaleString():'—';
-    document.getElementById('dCompletedItems').textContent='Completed: '+(r.completedItems!==undefined?r.completedItems.toLocaleString():'—');
-    document.getElementById('dTotalRemaining').textContent=r.totalRemaining!==undefined?'฿'+fmt(r.totalRemaining):'—';
-    document.getElementById('dAvgDuration').textContent=r.avgDurationMonths!==undefined?r.avgDurationMonths.toFixed(1):'—';
-    document.getElementById('dExpiringThisMonth').textContent=r.expiringThisMonth!==undefined?r.expiringThisMonth.toLocaleString():'—';
-    if(r.momChange && r.momChange.changePercent !== undefined && r.momChange.changePercent !== null){
-      var momV = r.momChange.changePercent;
-      document.getElementById('dMomChange').textContent=(momV>0?'+':'')+momV.toFixed(1)+'%';
-      document.getElementById('dMomChange').style.color=momV>=0?'var(--gn)':'var(--rd)';
-      document.getElementById('dMomPeriod').textContent=r.momChange.period||'';
-    } else {
-      document.getElementById('dMomChange').textContent='—';
-      document.getElementById('dMomPeriod').textContent='';
+  // Use batchCall to fetch dashboard data + settings in one round-trip
+  batchCall(
+    ['getDashboardData', 'getSettings', 'getEmailConfig'],
+    function(results, errors) {
+      var r = results.getDashboardData;
+      if (!r || !r.ok) {
+        document.getElementById('dashSub').textContent = 'Error: ' + (r ? r.error : 'Unknown error');
+        return;
+      }
+      // Existing KPIs
+      document.getElementById('dTotalItems').textContent = r.totalItems.toLocaleString();
+      document.getElementById('dTotalAmt').textContent = fmt(r.totalAmortization);
+      document.getElementById('dCurPeriod').textContent = r.currentPeriod;
+      document.getElementById('dashSub').textContent = r.totalItems.toLocaleString() + ' รายการ · ' + r.currentPeriod;
+      document.getElementById('statusTxt').textContent = r.totalItems + ' rec';
+      document.getElementById('statusDot').className = 'dot g';
+      
+      // New KPI Row 1
+      document.getElementById('dActiveItems').textContent = r.activeItems !== undefined ? r.activeItems.toLocaleString() : '—';
+      document.getElementById('dCompletedItems').textContent = 'Completed: ' + (r.completedItems !== undefined ? r.completedItems.toLocaleString() : '—');
+      document.getElementById('dTotalRemaining').textContent = r.totalRemaining !== undefined ? '฿' + fmt(r.totalRemaining) : '—';
+      document.getElementById('dAvgDuration').textContent = r.avgDurationMonths !== undefined ? r.avgDurationMonths.toFixed(1) : '—';
+      document.getElementById('dExpiringThisMonth').textContent = r.expiringThisMonth !== undefined ? r.expiringThisMonth.toLocaleString() : '—';
+      if (r.momChange && r.momChange.changePercent !== undefined && r.momChange.changePercent !== null) {
+        var momV = r.momChange.changePercent;
+        document.getElementById('dMomChange').textContent = (momV > 0 ? '+' : '') + momV.toFixed(1) + '%';
+        document.getElementById('dMomChange').style.color = momV >= 0 ? 'var(--gn)' : 'var(--rd)';
+        document.getElementById('dMomPeriod').textContent = r.momChange.period || '';
+      } else {
+        document.getElementById('dMomChange').textContent = '—';
+        document.getElementById('dMomPeriod').textContent = '';
+      }
+      
+      // New KPI Row 2 — Largest Item
+      if (r.largestItem) {
+        document.getElementById('dLargestItem').textContent = (r.largestItem.docNo || '') + ' — ' + (r.largestItem.description || '').substring(0, 40);
+        document.getElementById('dLargestAmt').textContent = '฿' + fmt(r.largestItem.amount);
+      } else {
+        document.getElementById('dLargestItem').textContent = '—';
+        document.getElementById('dLargestAmt').textContent = '';
+      }
+      // Health Score
+      var hs = r.healthScore !== undefined ? r.healthScore : 0;
+      document.getElementById('dHealthScore').textContent = hs + '%';
+      var bar = document.getElementById('dHealthBar');
+      bar.style.width = hs + '%';
+      bar.style.background = hs >= 80 ? 'var(--gn)' : hs >= 50 ? 'var(--gold)' : 'var(--rd)';
+      
+      // Data Freshness (S-14)
+      var freshnessEl = document.getElementById('dataFreshnessBody');
+      var now = new Date();
+      freshnessEl.innerHTML =
+        '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px">' +
+        '<span style="color:var(--mt)">Last Checked:</span><span>' + now.toLocaleString('th-TH') + '</span>' +
+        '<span style="color:var(--mt)">Data Source:</span><span>Input Sheet (' + (r.totalItems || 0) + ' records)</span>' +
+        '<span style="color:var(--mt)">Refresh:</span><span>Auto (5-min cache)</span>' +
+        '<span style="color:var(--mt)">Status:</span><span><span class="dot g" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> Online</span>' +
+        '</div>';
+      
+      // Render all charts
+      renderCharts(r);
+      // Phase A: drill-down dashboard
+      setTimeout(function(){setupDashboardDrillDown(r);}, 50);
+      // B5: Load Running Balance data
+      setTimeout(function(){loadRunningBalance(r);}, 200);
+    },
+    function(error) {
+      document.getElementById('dashSub').textContent = 'Error: ' + error.message;
+      document.getElementById('statusTxt').textContent = 'Error';
+      document.getElementById('statusDot').className = 'dot r';
     }
-    
-    // New KPI Row 2 — Largest Item
-    if(r.largestItem){
-      document.getElementById('dLargestItem').textContent=(r.largestItem.docNo||'')+' — '+(r.largestItem.description||'').substring(0,40);
-      document.getElementById('dLargestAmt').textContent='฿'+fmt(r.largestItem.amount);
-    } else {
-      document.getElementById('dLargestItem').textContent='—';
-      document.getElementById('dLargestAmt').textContent='';
-    }
-    // Health Score
-    var hs = r.healthScore !== undefined ? r.healthScore : 0;
-    document.getElementById('dHealthScore').textContent=hs+'%';
-    var bar = document.getElementById('dHealthBar');
-    bar.style.width=hs+'%';
-    bar.style.background=hs>=80?'var(--gn)':hs>=50?'var(--gold)':'var(--rd)';
-    
-    // Data Freshness (S-14)
-    var freshnessEl = document.getElementById('dataFreshnessBody');
-    var now = new Date();
-    freshnessEl.innerHTML =
-      '<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px">'+
-      '<span style="color:var(--mt)">Last Checked:</span><span>'+now.toLocaleString('th-TH')+'</span>'+
-      '<span style="color:var(--mt)">Data Source:</span><span>Input Sheet ('+(r.totalItems||0)+' records)</span>'+
-      '<span style="color:var(--mt)">Refresh:</span><span>Auto (5-min cache)</span>'+
-      '<span style="color:var(--mt)">Status:</span><span><span class="dot g" style="display:inline-block;vertical-align:middle;margin-right:4px"></span> Online</span>'+
-      '</div>';
-    
-    // Render all charts
-    renderCharts(r);
-    // Phase A: drill-down dashboard
-    setTimeout(function(){setupDashboardDrillDown(r);},50);
-    // B5: Load Running Balance data
-    setTimeout(function(){loadRunningBalance(r);},200);
-  }).withFailureHandler(function(e){
-    document.getElementById('dashSub').textContent='Error: '+e.message;
-    document.getElementById('statusTxt').textContent='Error';
-    document.getElementById('statusDot').className='dot r';
-  }).getDashboardData();
+  );
 }
 
 // ========== RENDER CHARTS ==========
 function renderCharts(r){
-  destroyCharts();
+  ChartManager.destroyAllCharts();
   var isLight=document.body.classList.contains('light');
   var gridColor=isLight?'rgba(0,0,0,.06)':'rgba(255,255,255,.06)';
   var tickColor=isLight?'#88827a':'#676460';
   var palette=['rgba(201,169,110,.7)','rgba(88,136,187,.7)','rgba(58,159,101,.7)','rgba(184,82,82,.7)','rgba(128,112,204,.7)',
     'rgba(201,169,110,.5)','rgba(88,136,187,.5)','rgba(58,159,101,.5)','rgba(184,82,82,.5)','rgba(128,112,204,.5)'];
   var paletteSolid=['#C9A96E','#5888BB','#3A9F65','#B85252','#8070CC','#C9A96E','#5888BB','#3A9F65','#B85252','#8070CC'];
-  
+
+  // Register all chart configs with ChartManager for lazy init
   // ---- 1. Trend (existing) ----
   if(r.trend && r.trend.length>0){
-    var ctx=document.getElementById('trendChart');
-    if(ctx){
-      ctx=ctx.getContext('2d');
-      chartInstances.trend=new Chart(ctx,{
-        type:'line',
-        data:{
-          labels:r.trend.map(function(t){return t.period}),
-          datasets:[{
-            label:'Amortization',
-            data:r.trend.map(function(t){return t.amount}),
-            borderColor:'#C9A96E',
-            backgroundColor:'rgba(201,169,110,.08)',
-            fill:true,tension:.3,pointRadius:3,pointHoverRadius:5
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
-            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
-          }
+    ChartManager.registerChart('trendChart', {
+      type:'line',
+      data:{
+        labels:r.trend.map(function(t){return t.period}),
+        datasets:[{
+          label:'Amortization',
+          data:r.trend.map(function(t){return t.amount}),
+          borderColor:'#C9A96E',
+          backgroundColor:'rgba(201,169,110,.08)',
+          fill:true,tension:.3,pointRadius:3,pointHoverRadius:5
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
         }
-      });
-    }
+      }
+    });
   }
-  
+
   // ---- 2. GL Breakdown (existing) ----
   if(r.glBreakdown && r.glBreakdown.length>0){
-    var glCtx=document.getElementById('glChart');
-    if(glCtx){
-      glCtx=glCtx.getContext('2d');
-      var glLabels=r.glBreakdown.slice(0,10).map(function(g){return g.gl});
-      var glData=r.glBreakdown.slice(0,10).map(function(g){return g.amount});
-      chartInstances.gl=new Chart(glCtx,{
-        type:'bar',
-        data:{
-          labels:glLabels,
-          datasets:[{
-            label:'Amount',data:glData,
-            backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
-            borderRadius:4
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{grid:{display:false},ticks:{color:tickColor,font:{size:10}}},
-            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
-          }
+    var glLabels=r.glBreakdown.slice(0,10).map(function(g){return g.gl});
+    var glData=r.glBreakdown.slice(0,10).map(function(g){return g.amount});
+    ChartManager.registerChart('glChart', {
+      type:'bar',
+      data:{
+        labels:glLabels,
+        datasets:[{
+          label:'Amount',data:glData,
+          backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
+          borderRadius:4
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:tickColor,font:{size:10}}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
         }
-      });
-    }
+      }
+    });
   }
-  
+
   // ---- 3. Accumulated Trend (S-10) ----
   if(r.accumulatedTrend && r.accumulatedTrend.length>0){
-    var accCtx=document.getElementById('lineAccumTrend');
-    if(accCtx){
-      accCtx=accCtx.getContext('2d');
-      chartInstances.lineAccumTrend=new Chart(accCtx,{
-        type:'line',
-        data:{
-          labels:r.accumulatedTrend.map(function(t){return t.period}),
-          datasets:[{
-            label:'Accumulated',
-            data:r.accumulatedTrend.map(function(t){return t.accumulated}),
-            borderColor:'#5888BB',
-            backgroundColor:'rgba(88,136,187,.08)',
-            fill:true,tension:.3,pointRadius:2,pointHoverRadius:4
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
-            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
-          }
+    ChartManager.registerChart('lineAccumTrend', {
+      type:'line',
+      data:{
+        labels:r.accumulatedTrend.map(function(t){return t.period}),
+        datasets:[{
+          label:'Accumulated',
+          data:r.accumulatedTrend.map(function(t){return t.accumulated}),
+          borderColor:'#5888BB',
+          backgroundColor:'rgba(88,136,187,.08)',
+          fill:true,tension:.3,pointRadius:2,pointHoverRadius:4
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10}}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:10},callback:function(v){return fmt(v)}}}
         }
-      });
-    }
+      }
+    });
   }
-  
+
   // ---- 4. Stacked Bar by Cost Center (S-7) ----
   if(r.ccBreakdown && r.ccBreakdown.length>0){
-    var ccCtx=document.getElementById('stackedBarCC');
-    if(ccCtx){
-      ccCtx=ccCtx.getContext('2d');
-      // Group by period, stack by cost center
-      var ccByPeriod = {};
-      var ccNames = {};
-      r.ccBreakdown.forEach(function(d){
-        if(!ccByPeriod[d.period]) ccByPeriod[d.period]={};
-        ccByPeriod[d.period][d.cc]=d.amount;
-        ccNames[d.cc]=true;
+    var ccByPeriod = {};
+    var ccNames = {};
+    r.ccBreakdown.forEach(function(d){
+      if(!ccByPeriod[d.period]) ccByPeriod[d.period]={};
+      ccByPeriod[d.period][d.cc]=d.amount;
+      ccNames[d.cc]=true;
+    });
+    var periodLabels = Object.keys(ccByPeriod).sort();
+    var uniqueCCs = Object.keys(ccNames).sort();
+    var colorIdx=0;
+    var datasets = uniqueCCs.slice(0,8).map(function(cc){
+      var c = paletteSolid[colorIdx % paletteSolid.length];
+      colorIdx++;
+      return {
+        label: cc,
+        data: periodLabels.map(function(per){ return ccByPeriod[per][cc] || 0; }),
+        backgroundColor: c,
+        borderColor: 'transparent'
+      };
+    });
+    if(uniqueCCs.length>8){
+      var otherData = periodLabels.map(function(per){
+        var sum=0;
+        for(var i=8;i<uniqueCCs.length;i++) sum += ccByPeriod[per][uniqueCCs[i]] || 0;
+        return sum;
       });
-      var periodLabels = Object.keys(ccByPeriod).sort();
-      var uniqueCCs = Object.keys(ccNames).sort();
-      var colorIdx=0;
-      var datasets = uniqueCCs.slice(0,8).map(function(cc){
-        var c = paletteSolid[colorIdx % paletteSolid.length];
-        colorIdx++;
-        return {
-          label: cc,
-          data: periodLabels.map(function(per){ return ccByPeriod[per][cc] || 0; }),
-          backgroundColor: c,
-          borderColor: 'transparent'
-        };
-      });
-      // If many CCs, group remaining as "Other"
-      if(uniqueCCs.length>8){
-        var otherData = periodLabels.map(function(per){
-          var sum=0;
-          for(var i=8;i<uniqueCCs.length;i++) sum += ccByPeriod[per][uniqueCCs[i]] || 0;
-          return sum;
-        });
-        datasets.push({label:'Other',data:otherData,backgroundColor:'rgba(103,100,96,.4)',borderColor:'transparent'});
-      }
-      chartInstances.stackedBarCC=new Chart(ccCtx,{
-        type:'bar',
-        data:{labels:periodLabels,datasets:datasets},
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{stacked:true,grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
-            y:{stacked:true,grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}}
-          }
-        }
-      });
+      datasets.push({label:'Other',data:otherData,backgroundColor:'rgba(103,100,96,.4)',borderColor:'transparent'});
     }
+    ChartManager.registerChart('stackedBarCC', {
+      type:'bar',
+      data:{labels:periodLabels,datasets:datasets},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{stacked:true,grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
+          y:{stacked:true,grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}}
+        }
+      }
+    });
   }
-  
+
   // ---- 5. Pie by Company (S-8) ----
   if(r.companyBreakdown && r.companyBreakdown.length>0){
-    var pieCtx=document.getElementById('pieCompany');
-    if(pieCtx){
-      pieCtx=pieCtx.getContext('2d');
-      var coLabels=r.companyBreakdown.slice(0,8).map(function(c){return c.company});
-      var coData=r.companyBreakdown.slice(0,8).map(function(c){return c.amount});
-      chartInstances.pieCompany=new Chart(pieCtx,{
-        type:'pie',
-        data:{
-          labels:coLabels,
-          datasets:[{
-            data:coData,
-            backgroundColor:['rgba(201,169,110,.7)','rgba(88,136,187,.7)','rgba(58,159,101,.7)','rgba(184,82,82,.7)','rgba(128,112,204,.7)','rgba(201,169,110,.4)','rgba(88,136,187,.4)','rgba(58,159,101,.4)'],
-            borderColor:'transparent'
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{position:'bottom',labels:{color:tickColor,font:{size:9},boxWidth:10,padding:8}}}
-        }
-      });
-    }
+    var coLabels=r.companyBreakdown.slice(0,8).map(function(c){return c.company});
+    var coData=r.companyBreakdown.slice(0,8).map(function(c){return c.amount});
+    ChartManager.registerChart('pieCompany', {
+      type:'pie',
+      data:{
+        labels:coLabels,
+        datasets:[{
+          data:coData,
+          backgroundColor:['rgba(201,169,110,.7)','rgba(88,136,187,.7)','rgba(58,159,101,.7)','rgba(184,82,82,.7)','rgba(128,112,204,.7)','rgba(201,169,110,.4)','rgba(88,136,187,.4)','rgba(58,159,101,.4)'],
+          borderColor:'transparent'
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{color:tickColor,font:{size:9},boxWidth:10,padding:8}}}
+      }
+    });
   }
-  
+
   // ---- 6. Active Items by Month (S-9) ----
   if(r.activeItemsByMonth && r.activeItemsByMonth.length>0){
-    var abmCtx=document.getElementById('barActiveItems');
-    if(abmCtx){
-      abmCtx=abmCtx.getContext('2d');
-      var abmLabels=r.activeItemsByMonth.map(function(a){return a.period});
-      var abmData=r.activeItemsByMonth.map(function(a){return a.count});
-      chartInstances.barActiveItems=new Chart(abmCtx,{
-        type:'bar',
-        data:{
-          labels:abmLabels,
-          datasets:[{
-            label:'Active Items',data:abmData,
-            backgroundColor:'rgba(58,159,101,.6)',
-            borderRadius:3
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
-            y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},stepSize:1}}
-          }
+    var abmLabels=r.activeItemsByMonth.map(function(a){return a.period});
+    var abmData=r.activeItemsByMonth.map(function(a){return a.count});
+    ChartManager.registerChart('barActiveItems', {
+      type:'bar',
+      data:{
+        labels:abmLabels,
+        datasets:[{
+          label:'Active Items',data:abmData,
+          backgroundColor:'rgba(58,159,101,.6)',
+          borderRadius:3
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}},
+          y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},stepSize:1}}
         }
-      });
-    }
+      }
+    });
   }
-  
+
   // ---- 7. Top 10 IO (S-11) ----
   if(r.ioBreakdown && r.ioBreakdown.length>0){
-    var ioCtx=document.getElementById('barIoTop10');
-    if(ioCtx){
-      ioCtx=ioCtx.getContext('2d');
-      var ioLabels=r.ioBreakdown.slice(0,10).map(function(i){return i.io});
-      var ioData=r.ioBreakdown.slice(0,10).map(function(i){return i.amount});
-      chartInstances.barIoTop10=new Chart(ioCtx,{
-        type:'bar',
-        data:{
-          labels:ioLabels,
-          datasets:[{
-            label:'Amount',data:ioData,
-            backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
-            borderRadius:4
-          }]
-        },
-        options:{
-          responsive:true,maintainAspectRatio:false,
-          indexAxis:'y',
-          plugins:{legend:{display:false}},
-          scales:{
-            x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}},
-            y:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}}
-          }
+    var ioLabels=r.ioBreakdown.slice(0,10).map(function(i){return i.io});
+    var ioData=r.ioBreakdown.slice(0,10).map(function(i){return i.amount});
+    ChartManager.registerChart('barIoTop10', {
+      type:'bar',
+      data:{
+        labels:ioLabels,
+        datasets:[{
+          label:'Amount',data:ioData,
+          backgroundColor:['rgba(201,169,110,.6)','rgba(88,136,187,.6)','rgba(58,159,101,.6)','rgba(184,82,82,.6)','rgba(128,112,204,.6)'],
+          borderRadius:4
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        indexAxis:'y',
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:9},callback:function(v){return fmt(v)}}},
+          y:{grid:{display:false},ticks:{color:tickColor,font:{size:9}}}
         }
-      });
-    }
+      }
+    });
   }
-  
+
+  // Setup lazy initialization for dashboard section
+  ChartManager.setupSectionVisibility('secDashboard', [
+    'trendChart', 'glChart', 'lineAccumTrend', 'stackedBarCC', 
+    'pieCompany', 'barActiveItems', 'barIoTop10'
+  ]);
+
   // ---- Tables ----
   // Expiring Soon (S-12)
   var expBody = document.getElementById('expiringSoonBody');
   if(r.expiringSoon && r.expiringSoon.length>0){
     expBody.innerHTML = r.expiringSoon.map(function(e){
-      return '<tr><td style="font-family:JetBrains Mono,mono">'+esc(e.docNo)+'</td>'+
-   '<td style="font-family:JetBrains Mono,mono">'+esc(e.docNo2||'')+'</td>'+
-   '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">'+esc((e.description||'').substring(0,35))+'</td>'+
-   '<td>'+esc(e.endDate)+'</td>'+
-   '<td class="num">฿'+fmt(e.amount)+'</td>'+
-   '<td class="num">฿'+fmt(e.remaining)+'</td></tr>';
- }).join('');
- } else {
- expBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--mt)">No data</td></tr>';
+      return '<tr><td style=\"font-family:JetBrains Mono,mono\">'+esc(e.docNo)+'</td>' +
+   '<td style=\"font-family:JetBrains Mono,mono\">'+esc(e.docNo2||'')+'</td>' +
+   '<td style=\"max-width:180px;overflow:hidden;text-overflow:ellipsis\">'+esc((e.description||'').substring(0,35))+'</td>' +
+   '<td>'+esc(e.endDate)+'</td>' +
+   '<td class=\"num\">฿'+fmt(e.amount)+'</td>' +
+   '<td class=\"num\">฿'+fmt(e.remaining)+'</td></tr>';
+    }).join('');
+  } else {
+    expBody.innerHTML = '<tr><td colspan=\"6\" style=\"text-align:center;color:var(--mt)\">No data</td></tr>';
   }
-  
+
   // Data Quality (S-13)
   var dq = r.dataQuality || {};
   var dqEl = document.getElementById('dataQualityBody');
   dqEl.innerHTML =
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">'+
-    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
-    '<div style="font-size:16px;font-weight:500;color:var(--rd)">'+(dq.missingIO||0)+'</div><div style="font-size:10px;color:var(--mt)">Missing IO</div></div>'+
-    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
-    '<div style="font-size:16px;font-weight:500;color:var(--rd)">'+(dq.missingGL||0)+'</div><div style="font-size:10px;color:var(--mt)">Missing GL</div></div>'+
-    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
-    '<div style="font-size:16px;font-weight:500;color:var(--gold)">'+(dq.invalidDates||0)+'</div><div style="font-size:10px;color:var(--mt)">Invalid Dates</div></div>'+
-    '<div style="background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center">'+
-    '<div style="font-size:16px;font-weight:500;color:var(--gold)">'+(dq.zeroAmounts||0)+'</div><div style="font-size:10px;color:var(--mt)">Zero Amounts</div></div>'+
-    '</div>'+
-    '<div style="font-size:10px;color:var(--mt);text-align:right">Valid: '+(r.totalItems||0)+' items checked</div>';
+    '<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px\">' +
+    '<div style=\"background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center\">' +
+    '<div style=\"font-size:16px;font-weight:500;color:var(--rd)\">'+(dq.missingIO||0)+'</div><div style=\"font-size:10px;color:var(--mt)\">Missing IO</div></div>' +
+    '<div style=\"background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center\">' +
+    '<div style=\"font-size:16px;font-weight:500;color:var(--rd)\">'+(dq.missingGL||0)+'</div><div style=\"font-size:10px;color:var(--mt)\">Missing GL</div></div>' +
+    '<div style=\"background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center\">' +
+    '<div style=\"font-size:16px;font-weight:500;color:var(--gold)\">'+(dq.invalidDates||0)+'</div><div style=\"font-size:10px;color:var(--mt)\">Invalid Dates</div></div>' +
+    '<div style=\"background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:10px;text-align:center\">' +
+    '<div style=\"font-size:16px;font-weight:500;color:var(--gold)\">'+(dq.zeroAmounts||0)+'</div><div style=\"font-size:10px;color:var(--mt)\">Zero Amounts</div></div>' +
+    '</div>' +
+    '<div style=\"font-size:10px;color:var(--mt);text-align:right\">Valid: '+(r.totalItems||0)+' items checked</div>';
 }
-
 function destroyCharts(){
-  for(var k in chartInstances){if(chartInstances[k]){chartInstances[k].destroy();delete chartInstances[k]}}
+  ChartManager.destroyAllCharts();
 }
 
 // ========== RUN AMORTIZATION ==========
@@ -1030,7 +2137,11 @@ function saveSettings(){
     rounding:document.getElementById('sRounding').value
   };
   google.script.run.withSuccessHandler(function(r){
-    if(r.ok){toast('✅ Settings saved','ok')}else{toast('❌ '+r.error,'er')}
+    if(r.ok){
+      toast('✅ Settings saved','ok');
+      // Invalidate settings cache to force fresh load next time
+      PACache.invalidateType('settings');
+    }else{toast('❌ '+r.error,'er')}
   }).withFailureHandler(function(e){
     toast('❌ Save failed: '+e.message,'er');
   }).saveSettings(settings);
@@ -1815,16 +2926,47 @@ function syncImportQuickPreview() {
 
 // ========== ADMIN CONSOLE ==========
 function loadAdminConsole(){
-  google.script.run.withSuccessHandler(function(r){
-    if(!r.ok){document.getElementById('adminVersion').textContent='Error';return}
-    document.getElementById('adminVersion').textContent=r.version||'—';
-    document.getElementById('adminRuntime').textContent=r.runtime||'—';
-    document.getElementById('adminDeploy').textContent=r.deploy||'—';
-  }).withFailureHandler(function(e){
-    document.getElementById('adminVersion').textContent='Error';
-  }).getSystemInfo();
-  loadTriggerStatus();
-  loadEmailConfig();
+  // Use batchCall to fetch all admin data in one round-trip
+  batchCall(
+    ['getSystemInfo', 'getTriggerStatus', 'getEmailConfig'],
+    function(results, errors) {
+      if (results.getSystemInfo && results.getSystemInfo.ok) {
+        var r = results.getSystemInfo;
+        document.getElementById('adminVersion').textContent = r.version || '—';
+        document.getElementById('adminRuntime').textContent = r.runtime || '—';
+        document.getElementById('adminDeploy').textContent = r.deploy || '—';
+      }
+      if (results.getTriggerStatus && results.getTriggerStatus.ok) {
+        var r = results.getTriggerStatus;
+        var statusEl = document.getElementById('triggerStatusText');
+        var nextEl = document.getElementById('triggerNextRun');
+        var btn = document.getElementById('triggerToggleBtn');
+        if (r.installed) {
+          statusEl.textContent = '✅ Installed';
+          statusEl.style.color = 'var(--gn)';
+          var d = r.nextRun ? new Date(r.nextRun) : null;
+          nextEl.textContent = d ? d.toLocaleString('th-TH') : '—';
+          btn.innerHTML = '<i class="bi bi-stop-circle"></i> Remove Trigger';
+          btn.className = 'btn btn-rd';
+        } else {
+          statusEl.textContent = '⏹️ Not installed';
+          statusEl.style.color = 'var(--mt)';
+          nextEl.textContent = '—';
+          btn.innerHTML = '<i class="bi bi-play-circle"></i> Install Trigger';
+          btn.className = 'btn btn-pri';
+        }
+      }
+      if (results.getEmailConfig && results.getEmailConfig.ok) {
+        var r = results.getEmailConfig;
+        document.getElementById('emailRecipients').value = r.config.recipients || '';
+        document.getElementById('emailSendOnAutoRun').checked = r.config.sendOnAutoRun || false;
+        document.getElementById('emailSendWeeklyAlerts').checked = r.config.sendWeeklyAlerts || false;
+      }
+    },
+    function(error) {
+      document.getElementById('adminVersion').textContent = 'Error';
+    }
+  );
 }
 function clearCache(){
   document.getElementById('loaderCache').classList.remove('hidden');
@@ -4497,5 +5639,17 @@ function loadGLReconHistory() {
     document.getElementById('loaderGLReconGlobal').classList.add('hidden');
     toast('❌ ' + e.message, 'er');
   }).getReconciliationHistory(100, 0);
+}
+
+// Initialize preloading on page load
+if (typeof LazySectionLoader !== 'undefined' && LazySectionLoader.preloadCriticalData === 'function') {
+  LazySectionLoader.preloadCriticalData();
+} else {
+  // Fallback - direct call
+  if (typeof loadDashboard === 'function') {
+    setTimeout(loadDashboard, 0);
+  }
+  // Preload user guide content
+  PACache.set('userGuide', 'default', { preloaded: true, timestamp: Date.now() });
 }
 </script>
