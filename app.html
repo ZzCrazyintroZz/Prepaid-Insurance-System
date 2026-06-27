@@ -1315,26 +1315,8 @@ function checkMobile(){
 }
 window.addEventListener('resize', checkMobile);
 
-// ========== CLIENT CACHE-FIRST LOADER ==========
-// Renders cached data immediately, then refreshes from server in background
-function _loadCached(cacheKey, cacheTTL, fetchFn, renderFn) {
-  var cached = ClientSideCache.get(cacheKey);
-  if (cached !== null) {
-    renderFn(cached, true);
-  }
-  fetchFn(function(fresh) {
-    ClientSideCache.set(cacheKey, fresh, cacheTTL);
-    renderFn(fresh, false);
-  });
-}
-
 // ========== LOAD DASHBOARD ==========
 function loadDashboard(){
-  // Try cache first
-  var cachedDash = ClientSideCache.get('dashData');
-  if (cachedDash) {
-    _renderDashboard(cachedDash, true);
-  }
   // Use batchCall to fetch dashboard data + settings in one round-trip
   batchCall(
     ['getDashboardData', 'getSettings', 'getEmailConfig'],
