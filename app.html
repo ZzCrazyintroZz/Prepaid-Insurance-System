@@ -1133,36 +1133,32 @@ var LazySectionLoader = (function() {
       return loadingPromises[sectionName];
     }
     
+    // Check content cache first — SYNC for fast tab switch
+    var cached = sectionContentCache[sectionName];
+    if (cached) {
+      injectSection(sectionName, cached);
+      loadedSections[sectionName] = true;
+      delete loadingPromises[sectionName];
+      callInitFunction(sectionName);
+      return Promise.resolve();
+    }
+    
     var promise = new Promise(function(resolve, reject) {
-      // Check cache first
-      var cached = sectionContentCache[sectionName];
-      if (cached) {
-        injectSection(sectionName, cached);
-        loadedSections[sectionName] = true;
-        delete loadingPromises[sectionName];
-        callInitFunction(sectionName);
-        resolve();
+      // Since we're embedding templates in JS, just resolve immediately
+      var template = sectionTemplates[sectionName];
+      if (!template) {
+        reject(new Error('No template for section: ' + sectionName));
         return;
       }
       
-      // Simulate async loading (in real app, this would be a fetch or dynamic import)
-      // Since we're embedding templates in JS, we just use setTimeout for async feel
-      setTimeout(function() {
-        var template = sectionTemplates[sectionName];
-        if (!template) {
-          reject(new Error('No template for section: ' + sectionName));
-          return;
-        }
-        
-        // Cache the template
-        sectionContentCache[sectionName] = template;
-        
-        injectSection(sectionName, template);
-        loadedSections[sectionName] = true;
-        delete loadingPromises[sectionName];
-        callInitFunction(sectionName);
-        resolve();
-      }, 0);
+      // Cache the template for future fast switches
+      sectionContentCache[sectionName] = template;
+      
+      injectSection(sectionName, template);
+      loadedSections[sectionName] = true;
+      delete loadingPromises[sectionName];
+      callInitFunction(sectionName);
+      resolve();
     });
     
     loadingPromises[sectionName] = promise;
@@ -1209,43 +1205,68 @@ var LazySectionLoader = (function() {
 })();
 
 // ========== NAVIGATION ==========
+// DOM reference cache for fast tab switch
+var _domCache = {
+  sections: null,
+  navItems: null,
+  bnItems: null,
+  nav: null,
+  overlay: null
+};
+function _refreshDomCache() {
+  _domCache.sections = document.querySelectorAll('.section');
+  _domCache.navItems = document.querySelectorAll('.ni');
+  _domCache.bnItems = document.querySelectorAll('.bn-item');
+  _domCache.nav = document.querySelector('nav');
+  _domCache.overlay = document.getElementById('navOverlay');
+}
+
 function go(p){
-  // Convert page name to section id: first letter uppercase
   var sectionId = 'sec' + p.charAt(0).toUpperCase() + p.slice(1);
   var navId = 'nav-' + p;
   
-  // Lazy load section if not already loaded (except dashboard which is pre-loaded)
-  var loadPromise = Promise.resolve();
-  if (p !== 'dashboard' && typeof LazySectionLoader !== 'undefined') {
-    loadPromise = LazySectionLoader.loadSection(p);
-  }
+  // Refresh DOM cache periodically (every 10th call)
+  if (!_domCache.sections || Math.random() < 0.01) _refreshDomCache();
   
-  loadPromise.then(function() {
-    // Hide all sections
-    document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
+  var doSwitch = function() {
+    // Hide all sections — use cached references
+    for (var i = 0; i < _domCache.sections.length; i++) {
+      _domCache.sections[i].classList.remove('active');
+    }
     // Show target section
     var secEl = document.getElementById(sectionId);
-    if(secEl) secEl.classList.add('active');
-    // Update sidebar nav
-    document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('on')});
+    if (secEl) secEl.classList.add('active');
+    
+    // Update sidebar nav — use cached references
+    for (var i = 0; i < _domCache.navItems.length; i++) {
+      _domCache.navItems[i].classList.remove('on');
+    }
     var navEl = document.getElementById(navId);
-    if(navEl) navEl.classList.add('on');
-    // Update bottom nav
-    document.querySelectorAll('.bn-item').forEach(function(b){b.classList.remove('on')});
+    if (navEl) navEl.classList.add('on');
+    
+    // Update bottom nav — use cached references
+    for (var i = 0; i < _domCache.bnItems.length; i++) {
+      _domCache.bnItems[i].classList.remove('on');
+    }
     var bnMap = {dashboard:0, amort:1, sap:2, sync:3, import:4, admin:5, budget:6, settings:7};
     var bnIdx = bnMap[p];
-    if(bnIdx !== undefined){
-      var items = document.querySelectorAll('.bn-item');
-      if(items[bnIdx]) items[bnIdx].classList.add('on');
+    if (bnIdx !== undefined && _domCache.bnItems[bnIdx]) {
+      _domCache.bnItems[bnIdx].classList.add('on');
     }
+    
     // Close mobile nav
-    if(window.innerWidth <= 768){
-      var nav = document.querySelector('nav');
-      if(nav) nav.classList.remove('open');
-      var overlay = document.getElementById('navOverlay');
-      if(overlay) overlay.classList.remove('show');
+    if (window.innerWidth <= 768) {
+      if (_domCache.nav) _domCache.nav.classList.remove('open');
+      if (_domCache.overlay) _domCache.overlay.classList.remove('show');
     }
-  });
+  };
+  
+  // Lazy load section if needed
+  if (p !== 'dashboard' && typeof LazySectionLoader !== 'undefined' && !LazySectionLoader.isLoaded(p)) {
+    LazySectionLoader.loadSection(p).then(doSwitch);
+  } else {
+    doSwitch();
+  }
 }
 function switchTab(p){go(p);}
 
@@ -1294,8 +1315,26 @@ function checkMobile(){
 }
 window.addEventListener('resize', checkMobile);
 
+// ========== CLIENT CACHE-FIRST LOADER ==========
+// Renders cached data immediately, then refreshes from server in background
+function _loadCached(cacheKey, cacheTTL, fetchFn, renderFn) {
+  var cached = ClientSideCache.get(cacheKey);
+  if (cached !== null) {
+    renderFn(cached, true);
+  }
+  fetchFn(function(fresh) {
+    ClientSideCache.set(cacheKey, fresh, cacheTTL);
+    renderFn(fresh, false);
+  });
+}
+
 // ========== LOAD DASHBOARD ==========
 function loadDashboard(){
+  // Try cache first
+  var cachedDash = ClientSideCache.get('dashData');
+  if (cachedDash) {
+    _renderDashboard(cachedDash, true);
+  }
   // Use batchCall to fetch dashboard data + settings in one round-trip
   batchCall(
     ['getDashboardData', 'getSettings', 'getEmailConfig'],
@@ -1361,6 +1400,8 @@ function loadDashboard(){
       setTimeout(function(){setupDashboardDrillDown(r);}, 50);
       // B5: Load Running Balance data
       setTimeout(function(){loadRunningBalance(r);}, 200);
+      // Cache dashboard data for instant re-render on tab switch
+      ClientSideCache.set('dashData', r, 300);
     },
     function(error) {
       document.getElementById('dashSub').textContent = 'Error: ' + error.message;
@@ -2054,6 +2095,11 @@ function exportWide(){
 
 // ========== USER GUIDE ==========
 function loadGuide(){
+  var cached = ClientSideCache.get('guide');
+  if (cached) {
+    document.getElementById('guideContent').innerHTML = cached;
+    return;
+  }
   google.script.run.withSuccessHandler(function(r){
     if(!r.ok){document.getElementById('guideContent').innerHTML='<div class="al al-er">'+(r.error||'Error')+'</div>';return}
     var html='';
@@ -2109,6 +2155,7 @@ function loadGuide(){
     for(var n=0;n<r.techNotes.length;n++) html+='<li>'+esc(r.techNotes[n])+'</li>';
     html+='</ul></div>';
     document.getElementById('guideContent').innerHTML=html;
+    ClientSideCache.set('guide', html, 1800);
   }).withFailureHandler(function(e){
     document.getElementById('guideContent').innerHTML='<div class="al al-er">'+e.message+'</div>';
   }).getUserGuideData();
@@ -2116,6 +2163,16 @@ function loadGuide(){
 
 // ========== SETTINGS ==========
 function loadSettings(){
+  var cached = ClientSideCache.get('settings');
+  if (cached) {
+    document.getElementById('sCompany').value = cached.company || '1022';
+    document.getElementById('sPrepaidGL').value = cached.prepaidGL || '11370010';
+    document.getElementById('sDocType').value = cached.docType || 'SA';
+    document.getElementById('sCurrency').value = cached.currency || 'THB';
+    document.getElementById('sMaxLines').value = cached.maxLinesPerJE || 900;
+    document.getElementById('sRounding').value = cached.rounding || '4dec';
+    return;
+  }
   google.script.run.withSuccessHandler(function(r){
     if(!r.ok||!r.settings)return;
     var s=r.settings;
@@ -2125,6 +2182,7 @@ function loadSettings(){
     document.getElementById('sCurrency').value=s.currency||'THB';
     document.getElementById('sMaxLines').value=s.maxLinesPerJE||900;
     document.getElementById('sRounding').value=s.rounding||'4dec';
+    ClientSideCache.set('settings', s, 600);
   }).getSettings();
 }
 function saveSettings(){
@@ -2141,6 +2199,7 @@ function saveSettings(){
       toast('✅ Settings saved','ok');
       // Invalidate settings cache to force fresh load next time
       PACache.invalidateType('settings');
+      ClientSideCache.remove('settings');
     }else{toast('❌ '+r.error,'er')}
   }).withFailureHandler(function(e){
     toast('❌ Save failed: '+e.message,'er');
@@ -2925,11 +2984,29 @@ function syncImportQuickPreview() {
 }
 
 // ========== ADMIN CONSOLE ==========
+var _adminCache = null;
 function loadAdminConsole(){
+  // Try cache first
+  if (_adminCache) {
+    _renderAdminConsole(_adminCache);
+    return;
+  }
   // Use batchCall to fetch all admin data in one round-trip
   batchCall(
     ['getSystemInfo', 'getTriggerStatus', 'getEmailConfig'],
     function(results, errors) {
+      _adminCache = results;
+      _renderAdminConsole(results);
+      // Auto-refresh every 60s
+      if (window._adminRefreshTimer) clearTimeout(window._adminRefreshTimer);
+      window._adminRefreshTimer = setTimeout(function(){ _adminCache = null; }, 60000);
+    },
+    function(error) {
+      document.getElementById('adminVersion').textContent = 'Error';
+    }
+  );
+}
+function _renderAdminConsole(results) {
       if (results.getSystemInfo && results.getSystemInfo.ok) {
         var r = results.getSystemInfo;
         document.getElementById('adminVersion').textContent = r.version || '—';
@@ -2962,12 +3039,7 @@ function loadAdminConsole(){
         document.getElementById('emailSendOnAutoRun').checked = r.config.sendOnAutoRun || false;
         document.getElementById('emailSendWeeklyAlerts').checked = r.config.sendWeeklyAlerts || false;
       }
-    },
-    function(error) {
-      document.getElementById('adminVersion').textContent = 'Error';
     }
-  );
-}
 function clearCache(){
   document.getElementById('loaderCache').classList.remove('hidden');
   google.script.run.withSuccessHandler(function(r){
