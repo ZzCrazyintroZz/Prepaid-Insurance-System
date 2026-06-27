@@ -41,7 +41,7 @@ function getUserGuideData() {
       ok: true,
       system: {
         name: 'Prepaid Expense Amortization System (Amort)',
-        version: 'v34 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
+        version: 'v36 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
         runtime: 'Google Apps Script (V8)',
         webApp: true
       },
@@ -314,7 +314,7 @@ function getSystemInfo() {
   try {
     return {
       ok: true,
-      version: 'v34 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
+      version: 'v36 (All Phases A-C: Quick Wins → Power Features → Enterprise: CRUD, Budget vs Actual, GL Recon, Import, Period-Close, Approval)',
       runtime: 'Google Apps Script (V8)',
       deploy: ScriptApp.getScriptId().substring(0, 8) + '...'
     };
