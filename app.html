@@ -119,8 +119,36 @@ function go(p){
   if(p==='import') loadImportPage();
   if(p==='voidexpense') loadVoidExpense();
   if(p==='glrecon') loadGLRecon();
+  if(p==='settings') loadSettings();
+  if(p==='amort') loadAmort();
+  if(p==='schedule') loadSchedule();
+  if(p==='sap') loadSAP();
+  if(p==='checker') loadChecker();
 }
 function switchTab(p){go(p);}
+
+// ========== ON-DEMAND PAGE LOADS ==========
+function loadAmort(){
+  document.getElementById('amortPeriod').value='';
+  document.getElementById('resultAmort').innerHTML='';
+  document.getElementById('loaderAmort').classList.add('hidden');
+}
+function loadSchedule(){
+  document.getElementById('schedPeriod').value='';
+  document.getElementById('loaderWide').classList.add('hidden');
+  document.getElementById('resultWide').innerHTML='';
+}
+function loadSAP(){
+  document.getElementById('sapPeriod').value='';
+  document.getElementById('loaderSAP').classList.add('hidden');
+  document.getElementById('sapBody').innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--mt);padding:20px">กด Preview หรือ Generate เพื่อดูข้อมูล</td></tr>';
+  document.getElementById('resultSAP').innerHTML='';
+}
+function loadChecker(){
+  document.getElementById('loaderChecker').classList.add('hidden');
+  document.getElementById('checkerResult').style.display='none';
+  document.getElementById('checkerBody').innerHTML='';
+}
 
 // ========== MOBILE NAV TOGGLE ==========
 function toggleNav(){
