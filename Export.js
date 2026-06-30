@@ -592,6 +592,198 @@ function bulkExportSAPJE(periods) {
   }
 }
 
+// ================= NEW EXPORT FUNCTIONS =================
+
+function exportFullSchedule(searchTerm) {
+  try {
+    var items = readInputData_();
+    var allSched = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var sched = calculateAmortization_(item, null);
+      if (sched.length === 0) continue;
+      var last = sched[sched.length - 1];
+      var start = new Date(item.startDate);
+      var end = new Date(item.endDate);
+      var totalDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      var ratePerDay = Math.round((item.amount / totalDays) * 10000) / 10000;
+      // Build summary row
+      var row = {
+        docNo: item.docNo, docNo2: item.docNo2 || '', description: item.description,
+        io: item.io, glPrepaid: item.glPrepaid, plate: item.plate,
+        costCenter: item.costCenter,
+        startDate: item.startDate, endDate: item.endDate,
+        amount: item.amount, totalDays: totalDays, ratePerDay: ratePerDay,
+        accumulated: last.accumulated, remaining: last.remaining
+      };
+      // Apply search filter
+      if (searchTerm) {
+        var term = searchTerm.toLowerCase();
+        var match = (row.docNo.toLowerCase().indexOf(term) !== -1) ||
+                    (row.docNo2.toLowerCase().indexOf(term) !== -1) ||
+                    (row.description.toLowerCase().indexOf(term) !== -1) ||
+                    (row.io.toLowerCase().indexOf(term) !== -1) ||
+                    (row.glPrepaid.toLowerCase().indexOf(term) !== -1);
+        if (!match) continue;
+      }
+      allSched.push(row);
+    }
+    if (allSched.length === 0) return {ok: false, error: 'No data matching criteria'};
+    // Build CSV
+    var csv = '\ufeff';
+    var headers = ['docNo','docNo2','description','IO','GL','plate','costCenter','startDate','endDate','amount','totalDays','ratePerDay','accumulated','remaining'];
+    for (var h = 0; h < headers.length; h++) {
+      if (h > 0) csv += ',';
+      csv += '"' + String(headers[h]).replace(/"/g, '""') + '"';
+    }
+    csv += '\n';
+    for (var r = 0; r < allSched.length; r++) {
+      var row = allSched[r];
+      var vals = [row.docNo, row.docNo2, row.description, row.io, row.glPrepaid, row.plate,
+                  row.costCenter, row.startDate, row.endDate, row.amount, row.totalDays,
+                  row.ratePerDay, row.accumulated, row.remaining];
+      for (var c = 0; c < vals.length; c++) {
+        if (c > 0) csv += ',';
+        var val = vals[c];
+        if (typeof val === 'number') {
+          csv += val;
+        } else {
+          csv += '"' + String(val || '').replace(/"/g, '""') + '"';
+        }
+      }
+      csv += '\n';
+    }
+    return {
+      ok: true,
+      csv: csv,
+      fileName: 'full_schedule_verify.csv',
+      totalRows: allSched.length
+    };
+  } catch (e) {
+    return {ok: false, error: e.message};
+  }
+}
+
+function exportMonthlyPivot(targetPeriod, searchTerm) {
+  try {
+    var items = readInputData_();
+    var allLong = [];
+    for (var i = 0; i < items.length; i++) {
+      var sched = calculateAmortization_(items[i], targetPeriod);
+      for (var j = 0; j < sched.length; j++) {
+        // Apply search filter on long data after calculation
+        var r = sched[j];
+        if (searchTerm) {
+          var term = searchTerm.toLowerCase();
+          var match = (r.docNo.toLowerCase().indexOf(term) !== -1) ||
+                      ((r.docNo2||'').toLowerCase().indexOf(term) !== -1) ||
+                      ((r.description||'').toLowerCase().indexOf(term) !== -1) ||
+                      (r.io.toLowerCase().indexOf(term) !== -1) ||
+                      (r.glPrepaid.toLowerCase().indexOf(term) !== -1);
+          if (!match) continue;
+        }
+        allLong.push(r);
+      }
+    }
+    if (allLong.length === 0) return {ok: false, error: 'No data calculated'};
+    var pivot = pivotToWideFormat_(allLong);
+    if (pivot.rows.length === 0) return {ok: false, error: 'No pivot data'};
+    // Build CSV with BOM
+    var csv = '\ufeff';
+    for (var h = 0; h < pivot.headers.length; h++) {
+      if (h > 0) csv += ',';
+      csv += '"' + String(pivot.headers[h]).replace(/"/g, '""') + '"';
+    }
+    csv += '\n';
+    for (var r = 0; r < pivot.rows.length; r++) {
+      for (var c = 0; c < pivot.rows[r].length; c++) {
+        if (c > 0) csv += ',';
+        var val = pivot.rows[r][c];
+        if (typeof val === 'number') {
+          csv += val;
+        } else {
+          csv += '"' + String(val || '').replace(/"/g, '""') + '"';
+        }
+      }
+      csv += '\n';
+    }
+    return {
+      ok: true,
+      csv: csv,
+      fileName: 'prepaid_monthly_pivot.csv',
+      totalRows: pivot.rows.length
+    };
+  } catch (e) {
+    return {ok: false, error: e.message};
+  }
+}
+
+function exportThisPeriod(targetPeriod, searchTerm) {
+  try {
+    if (!targetPeriod) return {ok: false, error: 'No period specified'};
+    var items = readInputData_();
+    var results = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var sched = calculateAmortization_(item, targetPeriod);
+      if (sched.length === 0) continue;
+      for (var j = 0; j < sched.length; j++) {
+        var r = sched[j];
+        // Apply search filter
+        if (searchTerm) {
+          var term = searchTerm.toLowerCase();
+          var match = (r.docNo.toLowerCase().indexOf(term) !== -1) ||
+                      ((r.docNo2||'').toLowerCase().indexOf(term) !== -1) ||
+                      ((r.description||'').toLowerCase().indexOf(term) !== -1) ||
+                      (r.io.toLowerCase().indexOf(term) !== -1) ||
+                      (r.glPrepaid.toLowerCase().indexOf(term) !== -1);
+          if (!match) continue;
+        }
+        results.push({
+          docNo: r.docNo,
+          description: r.description || '',
+          io: r.io,
+          gl: r.glPrepaid,
+          period: r.period,
+          amortAmount: r.amortAmount,
+          remaining: r.remaining
+        });
+      }
+    }
+    if (results.length === 0) return {ok: false, error: 'No data matching criteria'};
+    // Build CSV with BOM
+    var csv = '\ufeff';
+    var headers = ['docNo','description','IO','GL','period','amortAmount','remaining'];
+    for (var h = 0; h < headers.length; h++) {
+      if (h > 0) csv += ',';
+      csv += '"' + String(headers[h]).replace(/"/g, '""') + '"';
+    }
+    csv += '\n';
+    for (var r = 0; r < results.length; r++) {
+      var row = results[r];
+      var vals = [row.docNo, row.description, row.io, row.gl, row.period, row.amortAmount, row.remaining];
+      for (var c = 0; c < vals.length; c++) {
+        if (c > 0) csv += ',';
+        var val = vals[c];
+        if (typeof val === 'number') {
+          csv += val;
+        } else {
+          csv += '"' + String(val || '').replace(/"/g, '""') + '"';
+        }
+      }
+      csv += '\n';
+    }
+    return {
+      ok: true,
+      csv: csv,
+      fileName: 'this_period_export.csv',
+      totalRows: results.length
+    };
+  } catch (e) {
+    return {ok: false, error: e.message};
+  }
+}
+
 function getSAPJEPreview(targetPeriod) {
   try {
     // Cache check

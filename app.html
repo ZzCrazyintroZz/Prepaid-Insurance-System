@@ -834,13 +834,13 @@ var LazySectionLoader = (function() {
           '<div class="fg" style="margin-bottom:0;flex-shrink:0"><label>Period</label><input type="month" class="fi" id="schedPeriod" style="max-width:150px"></div>' +
           '<button class="btn btn-pri btn-sm" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>' +
           '<input class="fi" id="wideSearch" placeholder="Search..." oninput="wideFilterTable()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
-          '<button class="btn btn-ghost btn-sm" onclick="clearWideTable()"><i class="bi bi-x-circle"></i> Clear</button>' +
-          '<div class="fg" style="margin-bottom:0"><label>&nbsp;</label><select class="sel" id="wideCols" onchange="wideToggleCols()" style="min-width:70px;font-size:11px;padding:5px 6px"><option value="all">☰ All</option><option value="basic">Basic</option></select></div>' +
           '<div style="flex:1;min-width:5px"></div>' +
+          '<button class="btn btn-ghost btn-sm" onclick="exportFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="exportMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="exportThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
           '<div class="fg" style="margin-bottom:0;flex-shrink:0"><label>&nbsp;</label><select class="sel" id="widePageSize" onchange="var v=parseInt(this.value);_widePageSize=v;_widePage=0;wideRenderTable()" style="min-width:72px;font-size:11px;padding:5px 6px">' +
               '<option value="50">50/page</option><option value="100" selected>100/page</option><option value="200">200/page</option>' +
             '</select></div>' +
-          '<button class="btn btn-ghost btn-sm" onclick="downloadWideXLSX()" title="Export XLSX"><i class="bi bi-file-earmark-excel"></i> XLSX</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print"><i class="bi bi-printer"></i> Print</button>' +
         '</div>' +
         '<div id="loaderWide" class="loader hidden">⏳ Loading...</div>' +
@@ -2736,14 +2736,6 @@ function wideFilterTable(){
   // Restore on next preview
 }
 
-// Column visibility toggle: all or basic
-var _wideColMode='all';
-function wideToggleCols(){
-  var v=document.getElementById('wideCols').value;
-  _wideColMode=v;
-  if(_wideData) wideRenderTable();
-}
-
 function loadWidePreview(){
   var sel=document.getElementById('schedPeriod');
   var period=sel?sel.value:'';
@@ -2764,16 +2756,6 @@ function loadWidePreview(){
     document.getElementById('loaderWide').classList.add('hidden');
     showResult('resultWide','<div class="al al-er">'+e.message+'</div>');
   }).getWidePreview(period||null);
-}
-
-function clearWideTable(){
-  document.getElementById('wideBody').innerHTML='<tr><td style="color:var(--mt);text-align:center">Press Preview to load data</td></tr>';
-  document.getElementById('widePagination').innerHTML='';
-  document.getElementById('resultWide').classList.remove('show');
-  document.getElementById('loaderWide').classList.add('hidden');
-  var searchEl=document.getElementById('wideSearch');
-  if(searchEl) searchEl.value='';
-  _wideData=null;_widePage=0;
 }
 
 function downloadWideCSV() {
@@ -2827,6 +2809,78 @@ function downloadWideXLSX() {
     document.getElementById('loaderWide').classList.add('hidden');
     toast('❌ '+e.message,'er');
   }).exportWideXLSX(period||null);
+}
+
+// ================= NEW EXPORT FUNCTIONS =================
+function exportFullSchedule(){
+  var q=document.getElementById('wideSearch').value.trim();
+  document.getElementById('loaderWide').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
+    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = r.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    toast('❌ '+e.message,'er');
+  }).exportFullSchedule(q||null);
+}
+
+function exportMonthlyPivot(){
+  var sel=document.getElementById('schedPeriod');
+  var period=sel?sel.value:'';
+  var q=document.getElementById('wideSearch').value.trim();
+  document.getElementById('loaderWide').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
+    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = r.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    toast('❌ '+e.message,'er');
+  }).exportMonthlyPivot(period||null, q||null);
+}
+
+function exportThisPeriod(){
+  var sel=document.getElementById('schedPeriod');
+  var period=sel?sel.value:'';
+  if(!period){toast('Please select a period first','er');return;}
+  var q=document.getElementById('wideSearch').value.trim();
+  document.getElementById('loaderWide').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
+    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = r.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    toast('❌ '+e.message,'er');
+  }).exportThisPeriod(period, q||null);
 }
 
 // ========== SETTINGS ==========

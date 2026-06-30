@@ -49,7 +49,10 @@ function batchGet(fns) {
           'getUserGuideData': getUserGuideData,
           'getConfig': getConfig,
           'getTriggerStatus': getTriggerStatus,
-          'getLastEditTimestamp': getLastEditTimestamp
+          'getLastEditTimestamp': getLastEditTimestamp,
+          'exportFullSchedule': exportFullSchedule,
+          'exportMonthlyPivot': exportMonthlyPivot,
+          'exportThisPeriod': exportThisPeriod
         };
         
         var fn = allowedFunctions[fnName];
