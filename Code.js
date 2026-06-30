@@ -52,7 +52,8 @@ function batchGet(fns) {
           'getLastEditTimestamp': getLastEditTimestamp,
           'exportFullSchedule': exportFullSchedule,
           'exportMonthlyPivot': exportMonthlyPivot,
-          'exportThisPeriod': exportThisPeriod
+          'exportThisPeriod': exportThisPeriod,
+          'exportRunningBalance': exportRunningBalance
         };
         
         var fn = allowedFunctions[fnName];
