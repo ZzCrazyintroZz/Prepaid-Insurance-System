@@ -827,65 +827,7 @@ var LazySectionLoader = (function() {
       '</div></div>' +
       '<div id="amValidate" style="display:none"></div>' +
       '<div id="amSchedule" style="display:none;flex:1;min-height:0"></div>',
-    
-    schedule: '<div class="ph"><div class="pt">Amortization Schedule</div><div class="ps">Wide Format Schedule — 1 row/item 🟦</div></div>' +
-      '<div class="card" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;max-width:100%">' +
-        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
-          '<div class="fg" style="margin-bottom:0;flex-shrink:0"><label>Period</label><input type="month" class="fi" id="schedPeriod" style="max-width:150px"></div>' +
-          '<button class="btn btn-pri btn-sm" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>' +
-          '<input class="fi" id="wideSearch" placeholder="Search..." oninput="wideFilterTable()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
-          '<div style="flex:1;min-width:5px"></div>' +
-          '<button class="btn btn-gn btn-sm" onclick="exportFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
-          '<button class="btn btn-bl btn-sm" onclick="exportMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
-          '<button class="btn btn-pri btn-sm" onclick="exportThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
-          '<div class="fg" style="margin-bottom:0;flex-shrink:0"><label>&nbsp;</label><select class="sel" id="widePageSize" onchange="var v=parseInt(this.value);_widePageSize=v;_widePage=0;wideRenderTable()" style="min-width:72px;font-size:11px;padding:5px 6px">' +
-              '<option value="50">50/page</option><option value="100" selected>100/page</option><option value="200">200/page</option>' +
-            '</select></div>' +
-          '<button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print"><i class="bi bi-printer"></i> Print</button>' +
-        '</div>' +
-        '<div id="loaderWide" class="loader hidden">⏳ Loading...</div>' +
-        '<div class="result-box" id="resultWide"></div>' +
-        '<div id="widePagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:4px;font-size:11px"></div>' +
-        '<div class="tw" style="margin-top:4px;flex:1;overflow:auto;min-height:300px;width:100%">' +
-          '<table class="tb" id="wideTable" style="width:100%">' +
-            '<thead id="wideHead"></thead>' +
-            '<tbody id="wideBody"><tr><td style="color:var(--mt);text-align:center">Press Preview to load data</td></tr></tbody>' +
-          '</table>' +
-        '</div>' +
-      '</div>' +
-      // Running Balance card
-      '<div class="card" id="runningBalanceCard">' +
-        '<h3 onclick="toggleRunningBalance()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between">' +
-          '<span>📊 Running Balance</span>' +
-          '<span id="rbToggle" style="font-size:12px;color:var(--mt);transition:transform .2s">▶</span>' +
-        '</h3>' +
-        '<div id="runningBalanceBody" style="display:none">' +
-          '<div style="font-size:11px;color:var(--mt);margin-bottom:6px">' +
-            '<span id="rbProgress">Loading items...</span>' +
-            '<span id="rbDocCount" style="display:none;font-family:JetBrains Mono,mono"></span>' +
-          '</div>' +
-          '<div class="tw" style="max-height:400px;overflow:auto">' +
-            '<table class="tb" id="runningBalanceTable">' +
-              '<thead><tr>' +
-                '<th>Doc No</th>' +
-                '<th>Description</th>' +
-                '<th>Start–End</th>' +
-                '<th class="num">Amount</th>' +
-                '<th class="num">Amortized</th>' +
-                '<th class="num">Remaining</th>' +
-                '<th class="num">% Consumed</th>' +
-              '</tr></thead>' +
-              '<tbody id="runningBalanceTbody">' +
-                '<tr id="rbLoadingRow"><td colspan="7" style="text-align:center;color:var(--mt);padding:30px">' +
-                  '<span id="rbLoaderText">⏳ Loading document details...</span>' +
-                '</td></tr>' +
-              '</tbody>' +
-            '</table>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '</div>',
-    
+
     crud: '<div class="ph"><div class="pt">✏️ Prepaid Records</div><div class="ps">Create, Edit, Delete prepaid expense records — CRUD Operations</div></div>' +
       '<div class="card" style="padding:12px 20px">' +
         '<div class="btn-row" style="margin:0">' +
@@ -1525,7 +1467,6 @@ var LazySectionLoader = (function() {
   // Section-specific init functions to call after loading
   var sectionInitFunctions = {
     amort: 'loadAmort',
-    schedule: 'loadSchedule',
     sap: 'loadSAP',
     checker: 'loadChecker',
     void: 'loadVoidDocs',
@@ -1805,11 +1746,6 @@ function renderAmortKPI(r){
     '<div class="cbox" style="border-left:2px solid var(--gn)"><div class="kl">Total Remaining</div><div class="kv-sm" style="color:var(--gn)">'+fmt(k.totalRemaining)+'</div></div>'+
     '<div class="cbox" style="border-left:2px solid var(--vi)"><div class="kl">Total Prepaid</div><div class="kv-sm" style="color:var(--vi)">'+fmt(k.totalBase)+'</div></div>'+
     '</div>';
-}
-function loadSchedule(){
-  loadPeriodDropdowns();
-  document.getElementById('loaderWide').classList.add('hidden');
-  document.getElementById('resultWide').innerHTML = '';
 }
 function loadSAP(){
   document.getElementById('sapPeriod').value='';
@@ -2219,31 +2155,71 @@ function doAmortRun(mode){
         var fp=r.futurePeriods;
         // Store data for client-side interactions
         _amSchedData = { headers: ['Company','Plate','IO','GL','Description','Start','End','Amount','Days','Cur Period','Accum','Remain'], futurePeriods: fp, rows: r.scheduleRows };
+        _amWideData = r.wideFormat || null;
+        _amRunningBalance = r.runningBalance || [];
         var total= r.scheduleRows.length;
-        // Toolbar
-                var tbHtml='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
-                  '<span style="font-size:11px;color:var(--mt);font-weight:500">📅 '+total+' items</span>' +
-                  '<input class="fi" id="amSchedSearch" placeholder="Search..." oninput="amSchedFilter()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
-                  '<button class="btn btn-gn btn-sm" onclick="exportAmortFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
-                  '<button class="btn btn-bl btn-sm" onclick="exportAmortMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
-                  '<button class="btn btn-pri btn-sm" onclick="exportAmortThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
-                  '<div style="flex:1;min-width:5px"></div>' +
-                  '<select class="sel" id="amSchedPageSize" onchange="amSchedRender()" style="min-width:60px;font-size:11px;padding:4px 5px">' +
-                    '<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option>' +
-                  '</select>' +
-                  '<button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print"><i class="bi bi-printer"></i> Print</button>' +
-                '</div>';
-        // Table
-        var schHtml='<div class="card" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">'+tbHtml+
+        
+        // Tab buttons
+        var tabsHtml='<div class="btn-row" style="margin-bottom:8px">' +
+          '<button class="btn btn-pri btn-sm" id="amTabList" onclick="switchAmortView(\'list\')">📋 List</button>' +
+          '<button class="btn btn-ghost btn-sm" id="amTabWide" onclick="switchAmortView(\'wide\')">📐 Wide</button>' +
+          '</div>';
+        
+        // List view toolbar
+        var tbHtml='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
+          tabsHtml +
+          '<span style="font-size:11px;color:var(--mt);font-weight:500">📅 '+total+' items</span>' +
+          '<input class="fi" id="amSchedSearch" placeholder="Search..." oninput="amSchedFilter()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
+          '<button class="btn btn-gn btn-sm" onclick="exportAmortFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
+          '<button class="btn btn-bl btn-sm" onclick="exportAmortMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
+          '<button class="btn btn-pri btn-sm" onclick="exportAmortThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
+          '<div style="flex:1;min-width:5px"></div>' +
+          '<select class="sel" id="amSchedPageSize" onchange="amSchedRender()" style="min-width:60px;font-size:11px;padding:4px 5px">' +
+            '<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option>' +
+          '</select>' +
+          '<button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print"><i class="bi bi-printer"></i> Print</button>' +
+        '</div>';
+        // List table
+        var schHtml='<div class="card" id="amListView" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">'+tbHtml+
           '<div id="amSchedPagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:11px;margin-bottom:4px"></div>'+
           '<div class="tw" style="flex:1;overflow:auto;min-height:200px;width:100%"><table class="tb" style="width:100%" id="amSchedTable"><thead><tr>'+
           '<th>Company</th><th>Plate</th><th>IO</th><th>GL</th><th>Description</th><th>Start</th><th>End</th><th class="num">Amount</th><th class="num">Days</th>'+
           '<th class="num">Cur Period</th><th class="num">Accum</th><th class="num">Remain</th>';
         fp.forEach(function(p){schHtml+='<th class="num" style="color:var(--bl);font-size:10px">'+esc(p)+'</th>';});
         schHtml+='</tr></thead><tbody id="amSchedBody"></tbody></table></div></div>';
-        document.getElementById('amSchedule').innerHTML=schHtml;
+        
+        // Wide format view (hidden initially)
+        var wideHtml='<div class="card" id="amWideView" style="display:none;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">' +
+          '<div style="font-size:11px;color:var(--mt);font-weight:500;margin-bottom:8px">📐 Wide Format — Months as Columns</div>' +
+          '<div class="tw" style="flex:1;overflow:auto;min-height:200px;width:100%">' +
+          '<table class="tb" style="width:100%"><thead id="amWideHead"></thead><tbody id="amWideBody"></tbody></table></div></div>';
+        
+        // Running Balance
+        var rbHtml='';
+        if(_amRunningBalance.length>0){
+          rbHtml='<div class="card" id="amRunningBalanceCard">' +
+            '<h3 style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAmortRB()">' +
+            '<span>📊 Running Balance</span><span id="amRbToggle" style="font-size:12px;color:var(--mt)">▶</span></h3>' +
+            '<div id="amRbBody" style="display:none">' +
+            '<div class="tw" style="max-height:400px;overflow:auto">' +
+            '<table class="tb"><thead><tr><th>Doc No</th><th>Description</th><th>Start-End</th><th class="num">Amount</th><th class="num">Amortized</th><th class="num">Remaining</th><th class="num">% Consumed</th></tr></thead>' +
+            '<tbody>' + _amRunningBalance.map(function(rb){
+              var cls=rb.consumedPct>=90?'gn':rb.consumedPct>=70?'gold':'';
+              return '<tr><td style="font-family:JetBrains Mono,mono;font-size:10px">'+esc(rb.docNo)+'</td>'+
+                '<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(rb.description||'')+'</td>'+
+                '<td style="font-family:JetBrains Mono,mono;font-size:10px">'+(typeof rb.startDate==='object'?rb.startDate.toISOString().slice(0,10):String(rb.startDate).slice(0,10))+' – '+(typeof rb.endDate==='object'?rb.endDate.toISOString().slice(0,10):String(rb.endDate).slice(0,10))+'</td>'+
+                '<td class="num" style="font-size:10px">฿'+fmt(rb.amount)+'</td>'+
+                '<td class="num" style="font-size:10px">฿'+fmt(rb.amortized)+'</td>'+
+                '<td class="num" style="font-size:10px">฿'+fmt(rb.remaining)+'</td>'+
+                '<td class="num" style="font-size:10px;color:var(--'+cls+')">'+rb.consumedPct+'%</td></tr>';
+            }).join('') +
+            '</tbody></table></div></div></div>';
+        }
+        
+        document.getElementById('amSchedule').innerHTML=schHtml+wideHtml+rbHtml;
         _amSchedPage=0;
         amSchedRender();
+        if(_amWideData) renderAmortWide();
       }else{
         document.getElementById('amSchedule').innerHTML='<div class="al al-er">No data for this period</div>';
       }
@@ -2256,8 +2232,49 @@ function doAmortRun(mode){
   }).runAmortizationFull(period,company,roundMode==='r4',glPrepaid,linesJe);
 }
 
-// Amortization Schedule helpers
+// Amortization variables & helpers
 var _amSchedData=null, _amSchedPage=0;
+var _amWideData=null, _amRunningBalance=[];
+
+function switchAmortView(view){
+  var lv=document.getElementById('amListView');
+  var wv=document.getElementById('amWideView');
+  if(!lv||!wv) return;
+  lv.style.display=view==='list'?'flex':'none';
+  wv.style.display=view==='wide'?'flex':'flex';
+  var lt=document.getElementById('amTabList');
+  var wt=document.getElementById('amTabWide');
+  if(lt) lt.className='btn btn-sm '+(view==='list'?'btn-pri':'btn-ghost');
+  if(wt) wt.className='btn btn-sm '+(view==='wide'?'btn-pri':'btn-ghost');
+}
+
+function toggleAmortRB(){
+  var b=document.getElementById('amRbBody');
+  var t=document.getElementById('amRbToggle');
+  if(!b) return;
+  var o=b.style.display!=='none';
+  b.style.display=o?'none':'block';
+  if(t) t.textContent=o?'▶':'▼';
+}
+
+function renderAmortWide(){
+  if(!_amWideData||!_amWideData.rows||!_amWideData.rows.length) return;
+  var head=document.getElementById('amWideHead');
+  var body=document.getElementById('amWideBody');
+  if(!head||!body) return;
+  // Render headers
+  var hHtml='<tr>';
+  _amWideData.headers.forEach(function(h){hHtml+='<th>'+esc(h)+'</th>';});
+  hHtml+='</tr>';
+  head.innerHTML=hHtml;
+  // Render rows
+  body.innerHTML=_amWideData.rows.map(function(row){
+    return '<tr>'+row.map(function(v){
+      if(typeof v==='number') return '<td class="num" style="font-size:10px">'+fmt(v)+'</td>';
+      return '<td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc(String(v))+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
+}
 
 function clearAmort(){
   document.getElementById('amKpis').innerHTML='<div class="g5" style="margin-bottom:14px">'+
@@ -2689,253 +2706,6 @@ function exportBulkSAP() {
   }).bulkExportSAPJE(selected);
 }
 
-// ========== WIDE FORMAT ==========
-var _wideData = null; // cached full data for pagination
-var _widePage = 0;
-var _widePageSize = 50;
-
-function renderWidePagination() {
-  if (!_wideData) return '';
-  var totalPages = Math.max(1, Math.ceil(_wideData.totalRows / _widePageSize));
-  if (_widePage >= totalPages) _widePage = 0;
-  var start = _widePage * _widePageSize + 1;
-  var end = Math.min((_widePage + 1) * _widePageSize, _wideData.totalRows);
-  return '<div style="display:flex;align-items:center;gap:4px">' +
-    '<button class="btn btn-ghost btn-sm" onclick="wideGoPage(0)" ' + (_widePage<=0?'disabled':'') + ' title="First">⏮</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="wideGoPage(' + (_widePage-1) + ')" ' + (_widePage<=0?'disabled':'') + '>◀</button>' +
-    '<span style="font-size:11px;white-space:nowrap">Pg ' + (_widePage+1) + ' / ' + totalPages + '</span>' +
-    '<button class="btn btn-ghost btn-sm" onclick="wideGoPage(' + (_widePage+1) + ')" ' + (_widePage>=totalPages-1?'disabled':'') + '>▶</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="wideGoPage(' + (totalPages-1) + ')" ' + (_widePage>=totalPages-1?'disabled':'') + ' title="Last">⏭</button>' +
-    '<span style="margin-left:4px">Go to</span>' +
-    '<input class="fi" id="wideGoto" type="number" min="1" max="' + totalPages + '" value="' + (_widePage+1) + '" style="width:50px;height:22px;font-size:10px;text-align:center" onkeydown="if(event.key===\'Enter\')wideGoPage(parseInt(this.value)-1)">' +
-    '</div>' +
-    '<div style="display:flex;align-items:center;gap:4px">' +
-    '<span style="color:var(--mt);font-size:10px">' + start.toLocaleString() + '–' + end.toLocaleString() + ' of ' + _wideData.totalRows.toLocaleString() + ' items (' + _wideData.totalMonths + ' months)</span>' +
-    '<select class="sel" style="width:auto;font-size:10px;padding:1px 4px;height:22px" onchange="wideSetPageSize(parseInt(this.value))">' +
-      '<option value="50" ' + (_widePageSize===50?'selected':'') + '>50</option>' +
-      '<option value="100" ' + (_widePageSize===100?'selected':'') + '>100</option>' +
-      '<option value="200" ' + (_widePageSize===200?'selected':'') + '>200</option>' +
-      '<option value="300" ' + (_widePageSize===300?'selected':'') + '>300</option>' +
-    '</select>' +
-    '</div>';
-}
-
-function wideRenderTable() {
-  if (!_wideData || !_wideData.rows || _wideData.rows.length === 0) return;
-  var totalPages = Math.max(1, Math.ceil(_wideData.rows.length / _widePageSize));
-  if (_widePage >= totalPages) _widePage = 0;
-  var start = _widePage * _widePageSize;
-  var pageRows = _wideData.rows.slice(start, start + _widePageSize);
-  
-  // Column visibility
-  var colRange = [];
-  var base=_wideData.baseCount||0;
-  if(_wideColMode==='basic'){
-    // Only show up to Remaining column (skip future month columns)
-    for(var ci=0;ci<base+3&&ci<_wideData.headers.length;ci++) colRange.push(ci);
-  }else{
-    for(var ci=0;ci<_wideData.headers.length;ci++) colRange.push(ci);
-  }
-  
-  var thead = document.getElementById('wideHead');
-  var tbody = document.getElementById('wideBody');
-  var headHtml = '<tr>';
-  colRange.forEach(function(i){
-    var isMonth = i >= base;
-    headHtml += '<th style="' + (isMonth ? 'background:#cfe2f3;color:#1a5276' : '') + '">' + esc(_wideData.headers[i]) + '</th>';
-  });
-  headHtml += '</tr>';
-  thead.innerHTML = headHtml;
-  
-  tbody.innerHTML = pageRows.map(function(row) {
-    return '<tr>' + colRange.map(function(ci) {
-      var cell=row[ci];
-      var cls = ci >= base ? 'num' : '';
-      var style = ci >= base ? 'color:#1a5276;font-weight:500' : '';
-      return '<td class="' + cls + '" style="' + style + '">' + (typeof cell === 'number' ? fmt(cell) : esc(String(cell))) + '</td>';
-    }).join('') + '</tr>';
-  }).join('');
-  
-  document.getElementById('widePagination').innerHTML = renderWidePagination();
-}
-
-function wideGoPage(p) {
-  var totalPages = Math.max(1, Math.ceil((_wideData ? _wideData.totalRows : 0) / _widePageSize));
-  _widePage = Math.max(0, Math.min(p, totalPages - 1));
-  wideRenderTable();
-}
-
-function wideSetPageSize(s) {
-  _widePageSize = s;
-  _widePage = 0;
-  wideRenderTable();
-}
-
-// Filter table rows by search term
-function wideFilterTable(){
-  var q=document.getElementById('wideSearch').value.toLowerCase();
-  if(!_wideData || !_wideData.rows){return;}
-  if(!q){
-    wideRenderTable();
-    return;
-  }
-  var filtered=_wideData.rows.filter(function(row){
-    return row.some(function(cell){return String(cell).toLowerCase().indexOf(q)!==-1;});
-  });
-  var savedRows=_wideData.rows;
-  _wideData.rows=filtered;
-  _wideData._savedRows=savedRows;
-  _widePage=0;
-  wideRenderTable();
-  // Restore on next preview
-}
-
-function loadWidePreview(){
-  var sel=document.getElementById('schedPeriod');
-  var period=sel?sel.value:'';
-  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('Use YYYY-MM format','er');return}
-  // Reset search
-  var searchEl=document.getElementById('wideSearch');
-  if(searchEl) searchEl.value='';
-  document.getElementById('loaderWide').classList.remove('hidden');
-  document.getElementById('resultWide').classList.remove('show');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){showResult('resultWide','<div class="al al-er">'+r.error+'</div>');return}
-    _wideData = { headers: r.headers, rows: r.rows, baseCount: r.baseCount, totalRows: r.totalRows, totalMonths: r.totalMonths };
-    _widePage = 0;
-    wideRenderTable();
-    showResult('resultWide','<div class="al al-ok"><i class="bi bi-check-circle"></i> Showing '+r.totalRows+' items ('+r.totalMonths+' months)</div>');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    showResult('resultWide','<div class="al al-er">'+e.message+'</div>');
-  }).getWidePreview(period||null);
-}
-
-function downloadWideCSV() {
-  var sel=document.getElementById('schedPeriod');
-  var period=sel?sel.value:'';
-  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('Use YYYY-MM format','er');return}
-  document.getElementById('loaderWide').classList.remove('hidden');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
-    // Trigger CSV download via data URI
-    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    toast('❌ '+e.message,'er');
-  }).exportWideCSV(period||null);
-}
-
-function downloadWideXLSX() {
-  var sel=document.getElementById('schedPeriod');
-  var period=sel?sel.value:'';
-  if(period&&!/^\d{4}-\d{2}$/.test(period)){toast('Use YYYY-MM format','er');return}
-  document.getElementById('loaderWide').classList.remove('hidden');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
-    // Decode base64 blob and trigger download
-    var binary = atob(r.blobData);
-    var bytes = new Uint8Array(binary.length);
-    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    var blob = new Blob([bytes], {type: r.blobType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    toast('❌ '+e.message,'er');
-  }).exportWideXLSX(period||null);
-}
-
-// ================= NEW EXPORT FUNCTIONS =================
-function exportFullSchedule(){
-  var q=document.getElementById('wideSearch').value.trim();
-  document.getElementById('loaderWide').classList.remove('hidden');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
-    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    toast('❌ '+e.message,'er');
-  }).exportFullSchedule(q||null);
-}
-
-function exportMonthlyPivot(){
-  var sel=document.getElementById('schedPeriod');
-  var period=sel?sel.value:'';
-  var q=document.getElementById('wideSearch').value.trim();
-  document.getElementById('loaderWide').classList.remove('hidden');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
-    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    toast('❌ '+e.message,'er');
-  }).exportMonthlyPivot(period||null, q||null);
-}
-
-function exportThisPeriod(){
-  var sel=document.getElementById('schedPeriod');
-  var period=sel?sel.value:'';
-  if(!period){toast('Please select a period first','er');return;}
-  var q=document.getElementById('wideSearch').value.trim();
-  document.getElementById('loaderWide').classList.remove('hidden');
-  google.script.run.withSuccessHandler(function(r){
-    document.getElementById('loaderWide').classList.add('hidden');
-    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
-    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = r.fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
-  }).withFailureHandler(function(e){
-    document.getElementById('loaderWide').classList.add('hidden');
-    toast('❌ '+e.message,'er');
-  }).exportThisPeriod(period, q||null);
-}
 
 // ========== SETTINGS ==========
 function loadSettings(){
@@ -4108,7 +3878,6 @@ function initTableIds() {
 // Add CSV + Print buttons next to table wrappers
 function addExportButtons() {
   var configs = [
-    { tableId: 'wideTable', file: 'amort_schedule', wrapperSel: '#secSchedule .tw' },
     { tableId: 'sapTable', file: 'sap_je_preview', wrapperSel: '#secSap .tw' },
     { tableId: 'checkerErrorTable', file: 'checker_errors', wrapperSel: '#checkerErrorCard .tw' },
     { tableId: 'checkerWarnTable', file: 'checker_warnings', wrapperSel: '#checkerWarnCard .tw' },
@@ -4163,9 +3932,7 @@ document.addEventListener('keydown', function(e) {
     if (document.getElementById('secSap').classList.contains('active')) {
       var exportBtn = document.querySelector('#secSap .btn-gn');
       if (exportBtn) exportBtn.click();
-    } else if (document.getElementById('secSchedule').classList.contains('active')) {
-      var expWide = document.querySelector('#secSchedule .btn-gn');
-      if (expWide) expWide.click();
+
     }
     return;
   }
@@ -4271,199 +4038,6 @@ if (document.readyState === 'complete') {
 }
 
 // ========== B5: RUNNING BALANCE VIEW ==========
-var _rbDocs = [];          // Full doc list from getDocList()
-var _rbData = {};          // {docNo: detail} accumulator
-var _rbRunning = false;
-
-function toggleRunningBalance() {
-  var body = document.getElementById('runningBalanceBody');
-  var toggle = document.getElementById('rbToggle');
-  if (!body) return;
-  var isOpen = body.style.display !== 'none';
-  body.style.display = isOpen ? 'none' : 'block';
-  if (toggle) toggle.textContent = isOpen ? '▶' : '▼';
-  // If opening and table is empty, trigger load
-  if (!isOpen && !_rbRunning && _rbDocs.length === 0) {
-    loadRunningBalance(null);
-  }
-}
-
-function loadRunningBalance(dashData) {
-  _rbRunning = true;
-  document.getElementById('rbProgress').textContent = '⏳ Loading document list...';
-  google.script.run.withSuccessHandler(function(r) {
-    if (!r.ok || !r.list || r.list.length === 0) {
-      document.getElementById('rbProgress').textContent = 'No documents found.';
-      _rbRunning = false;
-      return;
-    }
-    _rbDocs = r.list;
-    document.getElementById('rbProgress').textContent =
-      'Loaded ' + r.list.length + ' docs. Fetching details...';
-    document.getElementById('rbDocCount').textContent =
-      r.list.length + ' documents';
-    document.getElementById('rbDocCount').style.display = 'inline';
-    // Start processing items sequentially
-    _rbData = {};
-    processRbItem(0);
-  }).withFailureHandler(function(e) {
-    document.getElementById('rbProgress').textContent = 'Error: ' + e.message;
-    _rbRunning = false;
-  }).getDocList();
-}
-
-function processRbItem(idx) {
-  if (idx >= _rbDocs.length) {
-    // Done
-    document.getElementById('rbProgress').textContent =
-      '✅ Loaded ' + _rbDocs.length + ' documents';
-    _rbRunning = false;
-    updateRbAvgConsumed();
-    return;
-  }
-  var doc = _rbDocs[idx];
-  document.getElementById('rbLoaderText').textContent =
-    '⏳ Loading ' + (idx + 1) + ' of ' + _rbDocs.length + ': ' + doc.docNo + '...';
-  google.script.run.withSuccessHandler(function(detail) {
-    if (detail && detail.ok) {
-      _rbData[detail.docNo] = detail;
-      renderRbRow(detail);
-    }
-    // Progress indicator
-    var pct = Math.round((idx + 1) / _rbDocs.length * 100);
-    document.getElementById('rbProgress').textContent =
-      'Loaded ' + (idx + 1) + ' of ' + _rbDocs.length + ' (' + pct + '%)';
-    // Next item
-    setTimeout(function() { processRbItem(idx + 1); }, 10);
-  }).withFailureHandler(function(e) {
-    // Skip failed item, continue
-    console.warn('Failed to load', doc.docNo, e);
-    setTimeout(function() { processRbItem(idx + 1); }, 10);
-  }).getDocDetail(doc.docNo);
-}
-
-function renderRbRow(detail) {
-  var tbody = document.getElementById('runningBalanceTbody');
-  if (!tbody) return;
-  // Remove loading row if present
-  var lr = document.getElementById('rbLoadingRow');
-  if (lr) lr.remove();
-
-  var amount = detail.amount || 0;
-  var amortized = detail.amortized || 0;
-  var remaining = detail.remaining || 0;
-  var pctConsumed = amount > 0 ? (amortized / amount * 100) : 0;
-
-  var tr = document.createElement('tr');
-  tr.style.cursor = 'pointer';
-  tr.setAttribute('data-docno', detail.docNo);
-  tr.addEventListener('click', function() {
-    showRbDocDetail(detail.docNo);
-  });
-
-  var startEnd = detail.startDate + ' – ' + detail.endDate;
-  // Shorten dates to show month/year
-  if (startEnd.length > 30) {
-    var s = (detail.startDate || '').substring(0, 7);
-    var e = (detail.endDate || '').substring(0, 7);
-    startEnd = s + ' – ' + e;
-  }
-
-  tr.innerHTML =
-    '<td style="font-family:JetBrains Mono,mono;font-size:11px">' + esc(detail.docNo) + '</td>' +
-    '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + esc((detail.description || '').substring(0, 40)) + '</td>' +
-    '<td style="font-size:10px;white-space:nowrap">' + esc(startEnd) + '</td>' +
-    '<td class="num">฿' + fmt(amount) + '</td>' +
-    '<td class="num">฿' + fmt(amortized) + '</td>' +
-    '<td class="num">฿' + fmt(remaining) + '</td>' +
-    '<td class="num">' + pctConsumed.toFixed(1) + '%</td>';
-
-  tbody.appendChild(tr);
-}
-
-function updateRbAvgConsumed() {
-  var el = document.getElementById('dAvgConsumed');
-  if (!el) return;
-  var keys = Object.keys(_rbData);
-  if (keys.length === 0) { el.textContent = '—'; return; }
-  var totalPct = 0, count = 0;
-  keys.forEach(function(k) {
-    var d = _rbData[k];
-    if (d && d.amount > 0) {
-      totalPct += (d.amortized / d.amount * 100);
-      count++;
-    }
-  });
-  el.textContent = count > 0 ? totalPct.toFixed(1) + '%' : '—';
-}
-
-function showRbDocDetail(docNo) {
-  if (!docNo) return;
-  // If we already have the detail in _rbData, use it; otherwise fetch
-  var detail = _rbData[docNo];
-  if (detail) {
-    showRbDetailPanel(detail);
-  } else {
-    document.getElementById('rbProgress').textContent =
-      '⏳ Fetching ' + docNo + '...';
-    google.script.run.withSuccessHandler(function(r) {
-      if (r && r.ok) {
-        _rbData[r.docNo] = r;
-        showRbDetailPanel(r);
-      } else {
-        toast('❌ ' + (r ? r.error : 'Failed to load detail'), 'er');
-      }
-    }).withFailureHandler(function(e) {
-      toast('❌ ' + e.message, 'er');
-    }).getDocDetail(docNo);
-  }
-}
-
-function showRbDetailPanel(detail) {
-  if (!detail || !detail.ok) {
-    toast('❌ No detail data', 'er');
-    return;
-  }
-  var schedule = detail.schedule || [];
-  var html = '<div style="margin-bottom:10px">' +
-    '<div class="kpi-grid" style="margin-bottom:8px">' +
-    '<div class="kpi"><div class="kv" style="font-size:15px;font-family:JetBrains Mono,mono">' + esc(detail.docNo) + '</div><div class="kl">Doc No</div></div>' +
-    '<div class="kpi"><div class="kv" style="font-size:14px">฿' + fmt(detail.amount) + '</div><div class="kl">Amount</div></div>' +
-    '<div class="kpi gn"><div class="kv" style="font-size:14px">฿' + fmt(detail.amortized) + '</div><div class="kl">Amortized</div></div>' +
-    '<div class="kpi rd"><div class="kv" style="font-size:14px">฿' + fmt(detail.remaining) + '</div><div class="kl">Remaining</div></div>' +
-    '</div>' +
-    '<div style="font-size:11px;color:var(--mt);margin-bottom:6px">' +
-    esc(detail.description || '') +
-    (detail.startDate ? ' · ' + esc(detail.startDate) + ' → ' + esc(detail.endDate) : '') +
-    '</div>';
-
-  if (schedule.length > 0) {
-    html += '<div style="font-weight:500;font-size:12px;margin-bottom:4px">📅 Month-by-Month Schedule (' + schedule.length + ' of ' + (detail.scheduleRows || schedule.length) + ' rows shown)</div>' +
-      '<table class="tb" style="font-size:11px"><thead><tr>' +
-      '<th>Period</th><th class="num">Amort Amount</th><th class="num">Accumulated</th><th class="num">Remaining</th><th>GL</th><th>IO</th><th class="num">Days</th>' +
-      '</tr></thead><tbody>' +
-      schedule.map(function(s) {
-        return '<tr>' +
-          '<td style="font-family:JetBrains Mono,mono">' + esc(s.period) + '</td>' +
-          '<td class="num">฿' + fmt(s.amortAmount) + '</td>' +
-          '<td class="num">฿' + fmt(s.accumulated) + '</td>' +
-          '<td class="num">฿' + fmt(s.remaining) + '</td>' +
-          '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(s.glPrepaid || '') + '</td>' +
-          '<td style="font-family:JetBrains Mono,mono;font-size:10px">' + esc(s.io || '') + '</td>' +
-          '<td class="num">' + (s.daysInMonth || '—') + '</td>' +
-          '</tr>';
-      }).join('') +
-      '</tbody></table>';
-    if (detail.scheduleRows > schedule.length) {
-      html += '<div style="font-size:10px;color:var(--mt);margin-top:4px">📌 Showing first ' + schedule.length + ' of ' + detail.scheduleRows + ' schedule rows.</div>';
-    }
-  } else {
-    html += '<div style="text-align:center;color:var(--mt);padding:20px">📊 No schedule data available</div>';
-  }
-
-  html += '</div>';
-  showDrillPanel('📊 Running Balance: ' + esc(detail.docNo), html);
-}
 
 // --- Inject Print Styles for PDF export ---
 (function() {

@@ -190,6 +190,7 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
     var allFuturePeriods = new Set();
     var amortMap = {}; // docNo -> {item, cur, full, futureAmts}
     var glMap = {};
+    var allLong = []; // long format for wide pivot + running balance
     
     for (var i = 0; i < filtered.length; i++) {
       var it = filtered[i];
@@ -198,6 +199,18 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
       // Get full schedule
       var full = calculateAmortization_(it, null);
       if (!full || full.length === 0) continue;
+      
+      // Collect long format for wide pivot
+      for (var j = 0; j < full.length; j++) {
+        allLong.push({
+          docNo: it.docNo, docNo2: it.docNo2 || '', description: it.description,
+          io: it.io || '', glPrepaid: it.glPrepaid || '', plate: it.plate || '',
+          costCenter: it.costCenter || '', startDate: it.startDate, endDate: it.endDate,
+          amount: Number(it.amount) || 0,
+          period: full[j].period, amortAmount: full[j].amortAmount,
+          accumulated: full[j].accumulated, remaining: full[j].remaining
+        });
+      }
       
       // Find current period row
       var curRow = null;
@@ -306,6 +319,19 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
     var noGL = activeArr.filter(function(a) { return !a.gl; }).length;
     var negItems = activeArr.filter(function(a) { return a.curAmort <= 0; }).length;
     
+    // Build wide format from long data
+    var wideData = pivotToWideFormat_(allLong);
+    
+    // Build running balance
+    var runningBalance = Object.keys(amortMap).sort().map(function(key) {
+      var a = amortMap[key];
+      return {
+        docNo: a.docNo, description: a.description, startDate: a.startDate, endDate: a.endDate,
+        amount: a.amount, amortized: a.curAccum, remaining: a.curRemain,
+        consumedPct: a.amount > 0 ? Math.round(a.curAccum / a.amount * 10000) / 100 : 0
+      };
+    });
+    
     var checker = [
       {pass: activeCount > 0, text: 'Items in period ' + period + ': ' + activeCount.toLocaleString() + ' items'},
       {pass: noCC === 0, text: 'Cost Center complete (missing ' + noCC + ')'},
@@ -332,7 +358,9 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
       checker: checker,
       balanced: balanced,
       totalDebits: totalDebits,
-      totalCredits: totalCredits
+      totalCredits: totalCredits,
+      wideFormat: { headers: wideData.headers, rows: wideData.rows, monthColumns: wideData.monthColumns },
+      runningBalance: runningBalance
     };
   } catch (e) {
     return { ok: false, error: e.message };
