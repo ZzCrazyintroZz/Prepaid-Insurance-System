@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amort — Prepaid Expense Amortization System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&family=DM+Serif+Display:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{--bg:#080809;--sf:#0E0E10;--card:#111113;--card2:#161618;--bdr:rgba(255,255,255,.07);--gold:#C9A96E;--tx:#ECEBE6;--mt:#676460;--gn:#3A9F65;--rd:#B85252;--bl:#5888BB;--vi:#8070CC;--r:8px;--nav:228px;--hh:52px}
+    .light{--bg:#f5f3f0;--sf:#ffffff;--card:#ffffff;--card2:#f0ede8;--bdr:rgba(0,0,0,.10);--tx:#1a1a1a;--mt:#88827a;--gold:#9A7230}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Prompt',sans-serif;background:var(--bg);color:var(--tx);transition:background .25s,color .25s}
+    #app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+    header{height:var(--hh);display:flex;align-items:center;gap:10px;padding:0 20px;background:var(--sf);border-bottom:1px solid var(--bdr);flex-shrink:0}
+    .hamburger{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:6px;border:1px solid var(--bdr);background:transparent;color:var(--tx);cursor:pointer;font-size:16px;flex-shrink:0}
+    .hamburger:hover{background:rgba(255,255,255,.05)}
+    .h-logo{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+    .h-logo:hover .h-icon{border-color:rgba(201,169,110,.45);background:rgba(201,169,110,.16)}
+    .h-icon{width:28px;height:28px;border-radius:5px;background:rgba(201,169,110,.10);border:1px solid rgba(201,169,110,.22);display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+    .h-name{font-family:'DM Serif Display',serif;font-size:15px;color:var(--tx)}
+    .h-sub{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.10em}
+    .sp{flex:1}
+    .chip{display:flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid var(--bdr);border-radius:4px;font-size:10px;color:var(--mt);cursor:pointer;transition:.15s}
+    .chip:hover{background:rgba(255,255,255,.04)}
+    .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+    .dot.g{background:var(--gn)}.dot.y{background:var(--gold)}.dot.r{background:var(--rd)}
+    #main{display:flex;flex:1;overflow:hidden}
+    /* ===== SIDEBAR ===== */
+    nav{width:var(--nav);flex-shrink:0;background:var(--sf);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow-y:auto;padding:8px 6px}
+    .ng{font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.12em;color:var(--mt);padding:12px 10px 4px;opacity:.65}
+    .ng:first-child{padding-top:6px}
+    .ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:5px;cursor:pointer;color:var(--mt);font-size:12px;transition:all .10s;position:relative;letter-spacing:.01em;border:1px solid transparent;user-select:none}
+    .ni:hover{background:rgba(255,255,255,.03);color:var(--tx)}
+    .ni.on{background:rgba(201,169,110,.08);border-color:rgba(201,169,110,.14);color:var(--gold);font-weight:500}
+    .ni.on::before{content:'';position:absolute;left:0;top:20%;height:60%;width:2px;background:var(--gold);border-radius:0 2px 2px 0}
+    .ic{font-size:12px;width:16px;text-align:center;flex-shrink:0;pointer-events:none}
+    .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99}
+    .nav-overlay.show{display:block}
+    /* ===== CONTENT ===== */
+    #ct{flex:1;overflow-y:auto;padding:20px;background:var(--bg);-webkit-overflow-scrolling:touch}
+    .section{display:none}.section.active{display:block}.section.active.flex-full{display:flex;flex-direction:column;flex:1;min-height:0;height:100%}
+    .ph{margin-bottom:20px}
+    .pt{font-family:'DM Serif Display',serif;font-size:26px;color:var(--tx)}
+    .ps{font-size:12px;color:var(--mt);margin-top:4px}
+    .card{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:20px;margin-bottom:16px}
+    .card h3{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+    .kpi{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px 16px;border-left:2px solid var(--gold);transition:background .25s}
+    .kpi.bl{border-left-color:var(--bl)}.kpi.gn{border-left-color:var(--gn)}.kpi.rd{border-left-color:var(--rd)}.kpi.vi{border-left-color:var(--vi)}
+    .kv{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:500;color:var(--tx)}
+    .kl{font-size:9px;color:var(--mt);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+    .ks{font-size:10px;color:var(--mt);margin-top:2px}
+    .kpi-wide{grid-column:1/-1}
+    .progress-bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:6px}
+    .progress-fill{height:100%;border-radius:3px;transition:width .6s ease}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;font-family:'Prompt',sans-serif}
+    .btn-pri{background:rgba(201,169,110,.10);border-color:rgba(201,169,110,.28);color:var(--gold)}
+    .btn-pri:hover{background:rgba(201,169,110,.18);border-color:rgba(201,169,110,.45)}
+    .btn-rd{background:rgba(184,82,82,.08);border-color:rgba(184,82,82,.22);color:var(--rd)}
+    .btn-rd:hover{background:rgba(184,82,82,.16)}
+    .btn-gn{background:rgba(58,159,101,.08);border-color:rgba(58,159,101,.22);color:var(--gn)}
+    .btn-ghost{background:transparent;border-color:var(--bdr);color:var(--mt)}
+    .btn-ghost:hover{background:rgba(255,255,255,.04);color:var(--tx)}
+    .btn-sm{padding:5px 10px;font-size:10px}
+    .btn-bl{background:rgba(88,136,187,.08);border-color:rgba(88,136,187,.22);color:var(--bl)}
+    .btn-bl:hover{background:rgba(88,136,187,.16)}
+    .btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .fg{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-bottom:10px}
+    .fg label{font-size:11px;color:var(--mt)}
+    .fi{padding:7px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;font-family:'JetBrains Mono',monospace;outline:none;transition:.12s}
+    .fi:focus{border-color:rgba(201,169,110,.3)}.fi::placeholder{color:var(--mt);font-size:11px}
+    .sel{padding:7px 10px;background:var(--bg);border:1px solid var(--bdr);border-radius:5px;color:var(--tx);font-size:12px;outline:none;font-family:'Prompt',sans-serif}
+    .tw{overflow-x:auto}.tb{width:100%;border-collapse:collapse;font-size:11px}
+    .tb th{padding:6px 8px;text-align:left;font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--mt);border-bottom:1px solid var(--bdr)}
+    .tb td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--tx);white-space:nowrap}
+    .tb tr:hover td{background:rgba(255,255,255,.02)}
+    .num{text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px}
+    .chart-wrap{height:260px;position:relative}
+    .chart-wrap-sm{height:200px;position:relative}
+    .al{padding:9px 12px;border-radius:5px;margin-bottom:10px;font-size:12px;border:1px solid transparent;display:flex;gap:8px}
+    .al-ok{background:rgba(58,159,101,.07);border-color:rgba(58,159,101,.18);color:#6ee7b7}
+    .al-er{background:rgba(184,82,82,.07);border-color:rgba(184,82,82,.18);color:#fca5a5}
+    .loader{text-align:center;padding:20px;color:var(--mt);font-size:12px}
+    .toast-container{position:fixed;top:16px;right:16px;z-index:999}
+    .toast{background:var(--card2);border:1px solid var(--bdr);border-left:4px solid var(--gold);border-radius:6px;padding:10px 14px;margin-bottom:6px;font-size:12px;min-width:240px;animation:slide .2s}
+    .toast.ok{border-left-color:var(--gn)}.toast.er{border-left-color:var(--rd)}
+    @keyframes slide{from{transform:translateX(300px);opacity:0}to{transform:translateX(0);opacity:1}}
+    .result-box{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:14px;margin-top:12px;display:none}
+    .result-box.show{display:block}
+    .hidden{display:none!important}
+    .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+    .section.active.flex-full#secDashboard{overflow-y:auto}
+    .section.active.flex-full#secDashboard .chart-grid{flex:1;min-height:0;margin-bottom:0}
+    .section.active.flex-full#secDashboard .chart-grid .card{display:flex;flex-direction:column;flex:1;min-height:0;margin-bottom:0}
+    .section.active.flex-full#secDashboard .chart-grid .card h3{flex-shrink:0}
+    .section.active.flex-full#secDashboard .chart-wrap{flex:1;min-height:100px;height:auto}
+    /* ===== HERO + CARD LAYOUT (Budget-style) ===== */
+    .hero{background:var(--card);border:1px solid var(--bdr);border-radius:var(--r);padding:28px 28px 24px;margin-bottom:14px}
+    .hero-label{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.14em;color:var(--mt);margin-bottom:2px}
+    .hero-val{font-size:38px;font-weight:600;font-family:'JetBrains Mono',monospace;color:var(--gold);line-height:1.1}
+    .hero-sub{font-size:11px;color:var(--mt);margin-top:6px}
+    .hero-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+    .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+    .g5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px}
+    .g4-chart{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    .cbox{background:var(--card2);border:1px solid var(--bdr);border-radius:6px;padding:13px 14px}
+    .cbox h4{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);margin-bottom:8px}
+    .kv-sm{font-size:18px;font-weight:500;font-family:'JetBrains Mono',monospace;color:var(--tx)}
+    .expiry-chip{background:var(--card2);border:1px solid var(--bdr);border-radius:5px;padding:6px 8px;min-width:40px;text-align:center}
+    .expiry-chip .ec-val{font-size:14px;font-weight:500;font-family:'JetBrains Mono',monospace;color:var(--tx);line-height:1.2}
+    .expiry-chip .ec-lbl{font-size:8px;color:var(--mt);text-transform:uppercase;letter-spacing:.06em}
+    .help-body{display:none;font-size:12px;padding-top:10px;border-top:1px solid var(--bdr);margin-top:10px}
+    .help-card h3:hover{color:var(--gold);opacity:.85}
+    /* ===== PAGINATION ===== */
+    .pagination{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card2);border:1px solid var(--bdr);border-radius:5px;margin-bottom:8px;flex-wrap:wrap}
+    .pagination .pag-info{font-size:12px;color:var(--tx);font-weight:500;white-space:nowrap}
+    .pagination .pag-range{font-size:10px;color:var(--mt);margin-left:auto;white-space:nowrap}
+    .pagination button[disabled]{opacity:.4;cursor:not-allowed;pointer-events:none}
+    /* ===== BOTTOM NAV (mobile) ===== */
+    .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--sf);border-top:1px solid var(--bdr);z-index:100;padding:4px 0 env(safe-area-inset-bottom,6px)}
+    .bn-items{display:flex;justify-content:space-around;align-items:center;padding:0 4px}
+    .bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 6px;cursor:pointer;color:var(--mt);font-size:9px;font-weight:500;transition:color .15s;min-width:58px;border-radius:6px;-webkit-tap-highlight-color:transparent}
+    .bn-item.on,.bn-item:hover{color:var(--gold)}
+    .bn-ic{font-size:18px;line-height:1}
+    /* ===== RESPONSIVE ===== */
+    @media(max-width:1024px){:root{--nav:196px}.chart-grid{grid-template-columns:1fr 1fr}.g4{grid-template-columns:repeat(2,1fr)}.g5{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:768px){
+      :root{--nav:0px;--hh:50px}
+      nav{display:none;position:fixed;top:var(--hh);left:0;bottom:60px;width:260px;z-index:200;background:var(--sf);border-right:1px solid var(--bdr);padding:12px 6px;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+      nav.open{display:flex}
+      .nav-overlay.show{display:block}
+      .hamburger{display:flex!important}
+      header{padding:0 14px;gap:8px}
+      #ct{padding:12px;padding-bottom:70px!important}
+      .chart-grid,.g2{grid-template-columns:1fr;gap:12px}
+      .g4{grid-template-columns:1fr 1fr;gap:8px}
+      .g5{grid-template-columns:1fr 1fr;gap:8px}
+      .g4-chart{grid-template-columns:1fr;gap:12px}
+      .bottom-nav{display:block}
+      .kpi-grid{grid-template-columns:1fr 1fr;gap:8px}
+      .hero{padding:20px 18px 16px}
+      .hero-val{font-size:26px}
+      #expiryBuckets{display:none}
+      .ni{min-height:44px}
+      .btn{min-height:38px}
+    }
+    @media(max-width:768px) and (orientation:landscape){
+      :root{--hh:42px}
+      .bottom-nav{display:none}
+      #ct{padding-bottom:0!important}
+    }
+    @media(max-width:480px){
+      :root{--hh:48px;--r:6px}
+      header{padding:0 10px;gap:5px}
+      #ct{padding:10px;padding-bottom:70px!important}
+      .h-name{font-size:13px}
+      .h-sub{display:none}
+      .kpi-grid{grid-template-columns:1fr 1fr;gap:7px}
+      .hero{padding:16px 14px 14px}
+      .hero-val{font-size:22px}
+    }
+    @media print{nav,header,#toast,.bottom-nav,.btn{display:none!important}#ct,#main,#app,body{overflow:visible!important}}
+  </style>
+</head>
+<body>
+<div id="app">
+<header>
+  <button class="hamburger" id="hamburger" onclick="toggleNav()" aria-label="Toggle navigation">☰</button>
+  <div class="h-logo" onclick="go('dashboard')" title="Back to Dashboard">
+    <div class="h-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <div><div class="h-name" id="headerTitle">Amort</div><div class="h-sub">Prepaid Expense Amortization System</div></div>
+  </div>
+  <div class="sp"></div>
+  <span class="chip" onclick="toggleDark()" title="Dark/Light"><i class="bi bi-moon-stars" id="darkIcon"></i></span>
+  <span class="chip" id="chipCached" style="color:var(--gold);border-color:rgba(201,169,110,.25);cursor:default;letter-spacing:.05em">Cached</span>
+  <span class="chip" onclick="syncDashboard()" title="Refresh now" style="color:var(--bl);border-color:rgba(88,136,187,.25);font-weight:500" id="chipSync">⟳ Sync</span>
+  <span class="chip" id="statusChip" style="cursor:default"><span class="dot" id="statusDot"></span><span id="statusTxt">—</span></span>
+</header>
+
+<div id="main">
+  <!-- ===== LEFT SIDEBAR ===== -->
+  <nav>
+    <div class="ng">Main Menu</div>
+    <div class="ni on" id="nav-dashboard" onclick="go('dashboard')"><span class="ic">◈</span>Dashboard</div>
+    <div class="ni" id="nav-amort" onclick="go('amort')"><span class="ic">🚀</span>Amortization</div>
+    <div class="ni" id="nav-schedule" onclick="go('schedule')"><span class="ic">📅</span>Schedule</div>
+    <div class="ni" id="nav-crud" onclick="go('crud')"><span class="ic">✏️</span>Prepaid</div>
+    <div class="ni" id="nav-budget" onclick="go('budget')"><span class="ic">💰</span>Budget</div>
+    <div class="ng">Data</div>
+    <div class="ni" id="nav-sync" onclick="go('sync')"><span class="ic">🔄</span>Sync Data</div>
+    <div class="ni" id="nav-import" onclick="go('import')"><span class="ic">📥</span>Import</div>
+    <div class="ni" id="nav-sap" onclick="go('sap')"><span class="ic">📤</span>SAP Generator</div>
+    <div class="ni" id="nav-checker" onclick="go('checker')"><span class="ic">🔍</span>Checker</div>
+    <div class="ni" id="nav-void" onclick="go('void')"><span class="ic">⛔</span>Void</div>
+    <div class="ng">Close &amp; Approve</div>
+    <div class="ni" id="nav-periodclose" onclick="go('periodclose')"><span class="ic">🔒</span>Period-Close</div>
+    <div class="ni" id="nav-approvals" onclick="go('approvals')"><span class="ic">✅</span>Approvals</div>
+    <div class="ni" id="nav-glrecon" onclick="go('glrecon')"><span class="ic">📊</span>GL Recon</div>
+    <div class="ng">System</div>
+    <div class="ni" id="nav-settings" onclick="go('settings')"><span class="ic">⚙️</span>Settings</div>
+    <div class="ni" id="nav-admin" onclick="go('admin')"><span class="ic">🛠️</span>Admin Console</div>
+    <div class="ni" id="nav-audit" onclick="go('audit')"><span class="ic">📋</span>Audit Log</div>
+    <div class="ni" id="nav-help" onclick="go('help')"><span class="ic">📖</span>User Guide</div>
+  </nav>
+
+  <!-- ===== MOBILE OVERLAY ===== -->
+  <div class="nav-overlay" id="navOverlay" onclick="toggleNav()"></div>
+
+  <!-- ===== CONTENT AREA ===== -->
+  <div id="ct">
+
+    <!-- ===== SECTION: DASHBOARD (loaded initially) ===== -->
+    <div class="section active flex-full" id="secDashboard">
+      <div class="ph">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="pt">Dashboard</div>
+        </div>
+      </div>
+
+      <!-- Hero: Total Amortization + Expiry Buckets -->
+      <div class="hero" style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="hero-label">TOTAL PREPAID AMORTIZATION</div>
+          <div class="hero-val" id="dHeroAmt">฿ —</div>
+          <div class="hero-sub" id="dHeroSub">—</div>
+        </div>
+        <div id="expiryBuckets" style="text-align:right">
+          <div class="hero-label" style="margin-bottom:6px;font-size:9px">⏰ EXPIRING</div>
+          <div style="display:flex;gap:8px" id="expiryChips">
+            <div class="expiry-chip" style="padding:8px 12px;min-width:52px;border-color:var(--rd);background:rgba(184,82,82,.12)"><div class="ec-val" style="font-size:18px;color:var(--rd)" id="dExp30">—</div><div class="ec-lbl" style="font-size:9px">≤30d</div></div>
+            <div class="expiry-chip" style="padding:8px 12px;min-width:52px;border-color:var(--gold);background:rgba(201,169,110,.12)"><div class="ec-val" style="font-size:18px;color:var(--gold)" id="dExp60">—</div><div class="ec-lbl" style="font-size:9px">≤60d</div></div>
+            <div class="expiry-chip" style="padding:8px 12px;min-width:52px;border-color:var(--bl);background:rgba(88,136,187,.12)"><div class="ec-val" style="font-size:18px;color:var(--bl)" id="dExp90">—</div><div class="ec-lbl" style="font-size:9px">≤90d</div></div>
+            <div class="expiry-chip" style="padding:8px 12px;min-width:52px;border-color:var(--gn);background:rgba(58,159,101,.12)"><div class="ec-val" style="font-size:18px;color:var(--gn)" id="dExp90p">—</div><div class="ec-lbl" style="font-size:9px">90d+</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Row: Largest Item | Active | Remaining | Duration | Health Score -->
+      <div class="g5" id="kpiMetrics">
+        <div class="cbox">
+          <div class="kl">Largest Item</div>
+          <div class="kv-sm" id="dLargestItem" style="font-size:13px">—</div>
+          <div class="ks" id="dLargestAmt"></div>
+        </div>
+        <div class="cbox">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="kl">Active Items</span>
+            <span class="ks" id="dCompletedItems" style="font-size:9px"></span>
+          </div>
+          <div class="kv-sm" id="dActiveItems">—</div>
+        </div>
+        <div class="cbox">
+          <div class="kl">Total Remaining</div>
+          <div class="kv-sm" id="dTotalRemaining">—</div>
+        </div>
+        <div class="cbox">
+          <div class="kl">Avg Duration</div>
+          <div class="kv-sm" id="dAvgDuration">—</div>
+        </div>
+        <div class="cbox">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="kl">Health Score</span>
+            <span class="kv-sm" id="dHealthScore" style="font-size:16px">—</span>
+          </div>
+          <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="dHealthBar" style="width:0%;background:var(--gn)"></div></div>
+        </div>
+      </div>
+
+      <!-- Charts: 2x2 Grid -->
+      <div class="g4-chart">
+        <div class="card" style="margin:0">
+          <h3><i class="bi bi-bar-chart-fill"></i> Active Items by Month</h3>
+          <div class="chart-wrap-sm"><canvas id="activeChart"></canvas></div>
+        </div>
+        <div class="card" style="margin:0">
+          <h3><i class="bi bi-graph-up-arrow"></i> Accumulated Amortization</h3>
+          <div class="chart-wrap-sm"><canvas id="accumChart"></canvas></div>
+        </div>
+        <div class="card" style="margin:0">
+          <h3><i class="bi bi-bar-chart"></i> This Period Amort by GL</h3>
+          <div class="chart-wrap-sm"><canvas id="glChart"></canvas></div>
+        </div>
+        <div class="card" style="margin:0">
+          <h3><i class="bi bi-graph-up"></i> Amort Trend by Period</h3>
+          <div class="chart-wrap-sm"><canvas id="trendChart"></canvas></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== LAZY-LOADED SECTIONS (loaded on demand via app.html lazy loader) ===== -->
+    <div class="section" id="secAmort"></div>
+
+    <!-- ===== SECTION: SCHEDULE ===== -->
+    <div class="section" id="secSchedule"></div>
+
+    <!-- ===== SECTION: PREPAID CRUD ===== -->
+    <div class="section" id="secCrud"></div>
+
+    <!-- ===== SECTION: SAP ===== -->
+    <div class="section" id="secSap"></div>
+
+    <!-- ===== SECTION: CHECKER ===== -->
+    <div class="section" id="secChecker"></div>
+
+    <!-- ===== SECTION: VOID ===== -->
+    <div class="section" id="secVoid"></div>
+
+    <!-- ===== SECTION: PERIOD-CLOSE ===== -->
+    <div class="section" id="secPeriodclose"></div>
+
+    <!-- ===== SECTION: APPROVALS ===== -->
+    <div class="section" id="secApprovals"></div>
+
+    <!-- ===== SECTION: GL RECONCILIATION ===== -->
+    <div class="section" id="secGlrecon"></div>
+
+    <!-- ===== SECTION: BUDGET ===== -->
+    <div class="section" id="secBudget"></div>
+
+        <!-- ===== SECTION: SETTINGS ===== -->
+    <div class="section" id="secSettings"></div>
+
+    <!-- ===== SECTION: SYNC DATA ===== -->
+    <div class="section" id="secSync"></div>
+
+    <!-- ===== SECTION: IMPORT ===== -->
+    <div class="section" id="secImport"></div>
+
+    <!-- ===== SECTION: ADMIN CONSOLE ===== -->
+    <div class="section" id="secAdmin"></div>
+
+    <!-- ===== SECTION: AUDIT LOG ===== -->
+    <div class="section" id="secAudit"></div>
+
+    <!-- ===== SECTION: HELP ===== -->
+    <div class="section" id="secHelp"></div>
+
+  </div><!-- /#ct -->
+</div><!-- /#main -->
+
+<!-- ===== BOTTOM NAV (mobile) ===== -->
+<div class="bottom-nav" id="bottomNav">
+  <div class="bn-items">
+    <div class="bn-item on" onclick="go('dashboard')"><span class="bn-ic">◈</span>Dash</div>
+    <div class="bn-item" onclick="go('amort')"><span class="bn-ic">🚀</span>Amort</div>
+    <div class="bn-item" onclick="go('sap')"><span class="bn-ic">📤</span>SAP</div>
+    <div class="bn-item" onclick="go('sync')"><span class="bn-ic">🔄</span>Sync</div>
+    <div class="bn-item" onclick="go('import')"><span class="bn-ic">📥</span>Import</div>
+    <div class="bn-item" onclick="go('admin')"><span class="bn-ic">🛠️</span>Admin</div>
+    <div class="bn-item" onclick="go('budget')"><span class="bn-ic">💰</span>Budget</div>
+    <div class="bn-item" onclick="go('settings')"><span class="bn-ic">⚙️</span>Settings</div>
+  </div>
+</div>
+</div><!-- /#app -->
+
+<div class="toast-container" id="toastContainer"></div>
+
+<? if (dashboardData) { ?>
+<script>
+// Set SSR data BEFORE app.html loads so init code can detect and skip duplicate call
+window.__DASHBOARD_DATA__ = <?!= dashboardData ?>;
+</script>
+<? } ?>
+<?!= include('app'); ?>
+
+<? if (dashboardData) { ?>
+<script>
+// SSR: render dashboard data inline (safety net, works even if app.html crashes)
+(function(d) {
+  if (!d || !d.ok) return;
+  function fmt(v) {
+    if (v === undefined || v === null) return '—';
+    return Number(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+  var el = document.getElementById('dHeroAmt');
+  if (el) el.textContent = '฿' + fmt(d.totalAmortization);
+  var sub = document.getElementById('dHeroSub');
+  if (sub) {
+    var txt = d.currentPeriod || '—';
+    if (d.momChange && d.momChange.changePercent !== undefined && d.momChange.changePercent !== null) {
+      var mv = d.momChange.changePercent;
+      txt += ' · MoM ' + (mv > 0 ? '+' : '') + mv.toFixed(1) + '%';
+      if (d.momChange.period) txt += ' (' + d.momChange.period + ')';
+    }
+    sub.textContent = txt;
+  }
+  var st = document.getElementById('statusTxt');
+  if (st) st.textContent = (d.totalItems || 0) + ' rec';
+  var sd = document.getElementById('statusDot');
+  if (sd) sd.className = 'dot g';
+  var map = {
+    dActiveItems: d.activeItems,
+    dCompletedItems: d.completedItems !== undefined ? 'Completed: ' + d.completedItems.toLocaleString() : '',
+    dLargestItem: d.largestItem ? d.largestItem.name || '—' : '—',
+    dLargestAmt: d.largestItem ? '฿' + fmt(d.largestItem.amount) : '',
+    dTotalRemaining: '฿' + fmt(d.totalRemaining),
+    dAvgDuration: d.avgDurationMonths !== undefined ? d.avgDurationMonths.toFixed(1) + ' mo' : '—',
+    dHealthScore: d.healthScore !== undefined ? d.healthScore.toFixed(0) + '%' : '—'
+  };
+  Object.keys(map).forEach(function(id) {
+    var e = document.getElementById(id);
+    if (e) e.textContent = map[id];
+  });
+  var hb = document.getElementById('dHealthBar');
+  if (hb && d.healthScore !== undefined) {
+    hb.style.width = Math.min(d.healthScore, 100) + '%';
+    hb.style.background = d.healthScore > 70 ? 'var(--gn)' : d.healthScore > 40 ? 'var(--gold)' : 'var(--rd)';
+  }
+  if (d.expiring30 !== undefined) {
+    var expMap = { dExp30: d.expiring30, dExp60: d.expiring60, dExp90: d.expiring90, dExp90p: d.expiring90plus };
+    Object.keys(expMap).forEach(function(id) {
+      var e = document.getElementById(id);
+      if (e) e.textContent = expMap[id] !== undefined ? expMap[id].toLocaleString() : '—';
+    });
+  }
+  console.log('✅ Dashboard SSR rendered inline');
+})(window.__DASHBOARD_DATA__);
+// Also trigger server data load for charts (renderDashboardData handles Chart.js)
+if (typeof loadDashboard === 'function') {
+  setTimeout(loadDashboard, 100);
+}
+</script>
+<? } ?>
+</body>
+</html>
