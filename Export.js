@@ -819,3 +819,48 @@ function getSAPJEPreview(targetPeriod) {
     return {ok: false, error: e.message};
   }
 }
+
+function exportRunningBalance(targetPeriod, searchTerm) {
+  try {
+    var items = readInputData_();
+    var allRB = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var sched = calculateAmortization_(item, targetPeriod);
+      if (sched.length === 0) continue;
+      var last = sched[sched.length - 1];
+      var curAccum = last.accumulated;
+      var curRemain = last.remaining;
+      var consumedPct = item.amount > 0 ? Math.round(curAccum / item.amount * 10000) / 100 : 0;
+      var row = {
+        docNo: item.docNo, description: item.description,
+        startDate: item.startDate, endDate: item.endDate,
+        amount: item.amount, amortized: curAccum, remaining: curRemain,
+        consumedPct: consumedPct
+      };
+      if (searchTerm) {
+        var term = searchTerm.toLowerCase();
+        var match = (row.docNo.toLowerCase().indexOf(term) !== -1) ||
+                    (row.description.toLowerCase().indexOf(term) !== -1);
+        if (!match) continue;
+      }
+      allRB.push(row);
+    }
+    if (allRB.length === 0) return {ok: false, error: 'No data matching criteria'};
+    var csv = '\ufeff';
+    var headers = ['docNo','description','startDate','endDate','amount','amortized','remaining','consumedPct'];
+    csv += headers.map(function(h){return '"'+h.replace(/"/g,'""')+'"';}).join(',') + '\n';
+    for (var r = 0; r < allRB.length; r++) {
+      var row = allRB[r];
+      var vals = [row.docNo, row.description, row.startDate, row.endDate,
+                  row.amount, row.amortized, row.remaining, row.consumedPct + '%'];
+      csv += vals.map(function(v){
+        if (typeof v === 'number') return v;
+        return '"' + String(v || '').replace(/"/g, '""') + '"';
+      }).join(',') + '\n';
+    }
+    return {ok: true, csv: csv, fileName: 'running_balance.csv', totalRows: allRB.length};
+  } catch (e) {
+    return {ok: false, error: e.message};
+  }
+}

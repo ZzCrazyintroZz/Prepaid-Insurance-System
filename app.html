@@ -2205,8 +2205,10 @@ function doAmortRun(mode){
         var rbHtml='';
         if(_amRunningBalance.length>0){
           rbHtml='<div class="card" id="amRunningBalanceCard">' +
-            '<h3 style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAmortRB()">' +
-            '<span>📊 Running Balance ('+_amRunningBalance.length+' items)</span><span id="amRbToggle" style="font-size:12px;color:var(--mt)">▶</span></h3>' +
+            '<h3 style="display:flex;align-items:center;cursor:pointer" onclick="toggleAmortRB()">' +
+            '<span style="flex:1">📊 Running Balance ('+_amRunningBalance.length+' items)</span>' +
+            '<button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();exportRunningBalance()" title="Export CSV"><i class="bi bi-download"></i></button>' +
+            '<span id="amRbToggle" style="font-size:12px;color:var(--mt);margin-left:6px">▶</span></h3>' +
             '<div id="amRbBody" style="display:none">' +
             '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;justify-content:flex-end">' +
               '<select class="sel" id="amRBPageSize" onchange="amRBRender()" style="min-width:70px;font-size:11px;padding:4px 5px">' +
@@ -2481,6 +2483,30 @@ function exportAmortThisPeriod(){
     document.getElementById('loaderWide').classList.add('hidden');
     toast('❌ '+e.message,'er');
   }).exportThisPeriod(period, q||null);
+}
+
+// Export Running Balance from amort page
+function exportRunningBalance(){
+  var period=document.getElementById('amPeriod').value;
+  if(!period){toast('Please select a period first','er');return;}
+  document.getElementById('loaderWide').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderWide').classList.add('hidden');
+    if(!r.ok){toast('❌ '+(r.error||'Error'),'er');return}
+    var blob = new Blob([r.csv], {type: 'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = r.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✅ Downloaded '+r.fileName+' ('+r.totalRows+' items)','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderWide').classList.add('hidden');
+    toast('❌ '+e.message,'er');
+  }).exportRunningBalance(period, null);
 }
 
 // Export SAP from amort page
