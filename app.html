@@ -2283,16 +2283,11 @@ function amSchedRender(){
   if(_amSchedPage>=totalPages)_amSchedPage=0;
   var start=_amSchedPage*ps;
   var pageRows=_amSchedData.rows.slice(start,start+ps);
-  var colMode=document.getElementById('amSchedCols').value;
   var base=12; // 12 base columns before future periods
-  // Build column range
+  // Build column range (all columns — removed basic toggle)
   var cols=[];
   var totalCols=12+(_amSchedData.futurePeriods?Object.keys(_amSchedData.futurePeriods).length:0);
-  if(colMode==='basic'){
-    for(var ci=0;ci<12;ci++) cols.push(ci); // only base columns
-  }else{
-    for(var ci=0;ci<totalCols;ci++) cols.push(ci);
-  }
+  for(var ci=0;ci<totalCols;ci++) cols.push(ci);
   // Render
   var tbody=document.getElementById('amSchedBody');
   tbody.innerHTML=pageRows.map(function(sr){
@@ -2341,18 +2336,7 @@ function amSchedFilter(){
   amSchedRender();
 }
 
-function clearAmortSched(){
-  document.getElementById('amSchedule').style.display='none';
-  document.getElementById('amSchedule').innerHTML='';
-  var searchEl=document.getElementById('amSchedSearch');
-  if(searchEl) searchEl.value='';
-  _amSchedData=null;_amSchedPage=0;
-}
-
-function exportAmortSchedXLSX(){
-  toast('Use Schedule tab → XLSX for full export','');
-}
-
+// Export Full Schedule from amort page
 function exportAmortFullSchedule(){
   var q=document.getElementById('amSchedSearch').value.trim();
   var period=document.getElementById('amPeriod').value;
