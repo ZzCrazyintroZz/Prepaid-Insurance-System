@@ -2333,6 +2333,8 @@ var LazySectionLoader = (function() {
     admin: '<div class="ph"><div class="pt">Admin Console</div><div class="ps">System administration and management</div></div>' +
 
       '<div class="card"><h3><i class="bi bi-info-circle"></i> System Info</h3><div class="kpi-grid"><div class="kpi"><div class="kv" id="adminVersion">—</div><div class="kl">Version</div></div><div class="kpi bl"><div class="kv" id="adminRuntime">—</div><div class="kl">Runtime</div></div><div class="kpi gn"><div class="kv" id="adminDeploy">—</div><div class="kl">Deploy Version</div></div></div></div>' +
+      // Sync Data Section
+      '<div class="card"><h3><i class="bi bi-arrow-repeat"></i> Data Sync</h3><div class="kpi-grid" id="adminSyncKpis"><div class="kpi bl"><div class="kv" id="adminSyncSheetId">—</div><div class="kl">Sheet ID</div></div><div class="kpi gn"><div class="kv" id="adminSyncRecords">—</div><div class="kl">Records</div></div><div class="kpi"><div class="kv" id="adminSyncLastSync">—</div><div class="kl">Last Sync</div></div></div><div id="adminSyncStatus" class="al al-ok" style="display:none"><i class="bi bi-check-circle"></i> <span id="adminSyncStatusText">Ready</span></div><div class="btn-row"><button class="btn btn-pri" onclick="adminSyncNow()"><i class="bi bi-arrow-repeat"></i> Sync Now</button></div><div id="loaderAdminSync" class="loader hidden">⏳ Syncing...</div></div>' +
 
       '<div class="card"><h3><i class="bi bi-trash"></i> Cache Management</h3><p style="font-size:12px;color:var(--mt);margin-bottom:10px">Clear server-side CacheService to force fresh data on next load.</p><div class="btn-row"><button class="btn btn-rd" onclick="clearCache()"><i class="bi bi-trash3"></i> Clear Cache</button></div><div id="loaderCache" class="loader hidden">⏳ Clearing cache...</div></div>' +
 
@@ -3071,7 +3073,7 @@ function go(p){
 
     }
 
-    var bnMap = {dashboard:0, amort:1, sap:2, import:3, sync:4, admin:5, budget:6, help:7};
+    var bnMap = {dashboard:0, amort:1, sap:2, import:3, admin:4, budget:5, help:6};
 
     var bnIdx = bnMap[p];
 
@@ -3542,7 +3544,6 @@ function renderDashboardData(r){
       renderCharts(r);
 
 
-
       // Cache dashboard data for instant re-render on tab switch
 
       ClientSideCache.set('dashData', r, 300);
@@ -3553,7 +3554,59 @@ function renderDashboardData(r){
 
       toast('✅ Dashboard refreshed', 'ok');
 
+      loadDashboardPeriodStatus();
+
     }
+
+function loadDashboardPeriodStatus() {
+  var body = document.getElementById('psBody');
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--mt);padding:10px">⏳ Loading...</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      var html = '';
+      var closed = 0, progress = 0, pending = 0;
+      var statuses = (r && r.ok && r.statuses) ? r.statuses.slice(0, 6) : [];
+      var now = new Date();
+      // Generate last 6 months even if no Period-Close data exists
+      var periods = [];
+      for (var i = 0; i < 6; i++) {
+        var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        var p = d.getFullYear() + '-' + ((d.getMonth() + 1) + '').padStart(2, '0');
+        var found = null;
+        for (var j = 0; j < statuses.length; j++) {
+          if (statuses[j].period === p) { found = statuses[j]; break; }
+        }
+        periods.push(found || { period: p, isClosed: false, checklist: {} });
+      }
+      for (var i = periods.length - 1; i >= 0; i--) {
+        var s = periods[i];
+        var cl = s.checklist || {};
+        var hasData = statuses.length > 0;
+        var ck = cl.preChecker ? '✅' : (hasData ? '⏳' : '—');
+        var am = cl.amortRun ? '✅' : (hasData ? '⏳' : '—');
+        var sap = cl.sapExported ? '✅' : (hasData ? '⏳' : '—');
+        var vd = cl.voidBatchComplete ? '✅' : (hasData ? '⏳' : '—');
+        if (s.isClosed) { ck = '✅'; am = '✅'; sap = '✅'; vd = '✅'; }
+        var closeTag = s.isClosed
+          ? '<span style="color:var(--gn)">🔒 Closed</span>'
+          : '<span style="color:var(--gold)">🔓 Open</span>';
+        var statusText = s.isClosed ? 'Done' : (hasData ? 'In Progress' : '—');
+        var rowBg = s.isClosed ? '' : ' style="background:rgba(201,169,110,.04)"';
+        var periodStyle = s.isClosed ? '' : ' style="color:var(--gold)"';
+        html += '<tr' + rowBg + '><td style="font-family:JetBrains Mono,mono;font-size:10px;font-weight:500"' + periodStyle + '>' + s.period + '</td><td style="text-align:center">' + ck + '</td><td style="text-align:center">' + am + '</td><td style="text-align:center">' + sap + '</td><td style="text-align:center">' + vd + '</td><td style="text-align:center">' + closeTag + '</td><td><span style="color:' + (s.isClosed ? 'var(--gn)' : 'var(--gold)') + '">' + statusText + '</span></td></tr>';
+        if (s.isClosed) closed++; else progress++;
+      }
+      body.innerHTML = html;
+      var e1 = document.getElementById('psClosed'); if (e1) e1.textContent = closed;
+      var e2 = document.getElementById('psProgress'); if (e2) e2.textContent = progress;
+      var e3 = document.getElementById('psPending'); if (e3) e3.textContent = periods.length - closed - progress;
+    })
+    .withFailureHandler(function(e) {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--rd);padding:10px">Error: ' + e.message + '</td></tr>';
+    })
+    .getAllPeriodStatuses();
+}
 
 
 
@@ -7079,7 +7132,7 @@ function loadAdminConsole(){
 
   batchCall(
 
-    ['getSystemInfo', 'getTriggerStatus', 'getEmailConfig'],
+    ['getSystemInfo', 'getTriggerStatus', 'getEmailConfig', 'getSyncStatus'],
 
     function(results, errors) {
 
@@ -7171,7 +7224,46 @@ function _renderAdminConsole(results) {
 
       }
 
+      if (results.getSyncStatus && results.getSyncStatus.ok) {
+
+        var r = results.getSyncStatus;
+
+        document.getElementById('adminSyncSheetId').textContent = r.sheetId ? r.sheetId.substring(0,12) + '...' : '—';
+
+        document.getElementById('adminSyncRecords').textContent = r.records || '—';
+
+        document.getElementById('adminSyncLastSync').textContent = r.lastSync || '—';
+
+        var st = document.getElementById('adminSyncStatus');
+
+        var stxt = document.getElementById('adminSyncStatusText');
+
+        if (st && stxt) {
+
+          st.style.display = 'flex';
+
+          stxt.textContent = 'Online · ' + (r.records || 0) + ' records';
+
+        }
+
+      }
+
     }
+
+function adminSyncNow() {
+  var btn = document.querySelector('#adminSyncKpis + .btn-row .btn');
+  document.getElementById('loaderAdminSync').classList.remove('hidden');
+  google.script.run.withSuccessHandler(function(r){
+    document.getElementById('loaderAdminSync').classList.add('hidden');
+    if (!r || !r.ok) { toast('❌ Sync failed','er'); return; }
+    _adminCache = null;
+    loadAdminConsole();
+    toast('✅ Sync complete','ok');
+  }).withFailureHandler(function(e){
+    document.getElementById('loaderAdminSync').classList.add('hidden');
+    toast('❌ Sync error: ' + e.message,'er');
+  }).getSyncStatus();
+}
 
 function clearCache(){
 

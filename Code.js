@@ -53,7 +53,8 @@ function batchGet(fns) {
           'exportFullSchedule': exportFullSchedule,
           'exportMonthlyPivot': exportMonthlyPivot,
           'exportThisPeriod': exportThisPeriod,
-          'exportRunningBalance': exportRunningBalance
+          'exportRunningBalance': exportRunningBalance,
+          'getAllPeriodStatuses': getAllPeriodStatuses
         };
         
         var fn = allowedFunctions[fnName];

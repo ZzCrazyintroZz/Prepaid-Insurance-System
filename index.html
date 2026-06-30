@@ -206,7 +206,6 @@
     <div class="ni" id="nav-approvals" onclick="go('approvals')"><span class="ic">✅</span>Approvals</div>
     <div class="ni" id="nav-glrecon" onclick="go('glrecon')"><span class="ic">📊</span>GL Reconciliation</div>
     <div class="ng">System</div>
-    <div class="ni" id="nav-sync" onclick="go('sync')"><span class="ic">🔄</span>Sync Data</div>
     <div class="ni" id="nav-audit" onclick="go('audit')"><span class="ic">📋</span>Audit Log</div>
     <div class="ni" id="nav-help" onclick="go('help')"><span class="ic">📖</span>User Guide</div>
     <div class="ni" id="nav-admin" onclick="go('admin')"><span class="ic">🛠️</span>Admin Console</div>
@@ -272,6 +271,32 @@
             <span class="kv-sm" id="dHealthScore" style="font-size:16px">—</span>
           </div>
           <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="dHealthBar" style="width:0%;background:var(--gn)"></div></div>
+        </div>
+      </div>
+
+      <!-- Period Status: Compact Table -->
+      <div class="card" style="margin-bottom:14px;padding:10px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);display:flex;align-items:center;gap:5px;margin:0"><i class="bi bi-calendar-check"></i> Period Status</h3>
+          <div style="display:flex;gap:8px;font-size:8px;color:var(--mt)">
+            <span><span style="color:var(--gn)">●</span> Closed <span id="psClosed">—</span></span>
+            <span><span style="color:var(--gold)">●</span> Active <span id="psProgress">—</span></span>
+            <span><span style="color:var(--mt)">●</span> Open <span id="psPending">—</span></span>
+          </div>
+        </div>
+        <div class="tw" style="max-height:170px;overflow-y:auto">
+          <table class="tb" style="font-size:9px">
+            <thead>
+              <tr><th style="width:60px">Period</th><th style="width:36px;text-align:center">Chk</th><th style="width:36px;text-align:center">Am</th><th style="width:36px;text-align:center">SAP</th><th style="width:36px;text-align:center">Void</th><th style="width:60px;text-align:center">Close</th><th>Status</th></tr>
+            </thead>
+            <tbody id="psBody">
+              <tr><td colspan="7" style="text-align:center;color:var(--mt);padding:8px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:4px;font-size:8px;color:var(--mt);border-top:1px solid var(--bdr);padding-top:4px;display:flex;gap:10px">
+          <span>💡 คลิก Period → Period-Close</span>
+          <span>คลิก icon → ไปฟังก์ชั่นนั้น</span>
         </div>
       </div>
 
@@ -352,7 +377,6 @@
     <div class="bn-item" onclick="go('amort')"><span class="bn-ic">🚀</span>Amort</div>
     <div class="bn-item" onclick="go('sap')"><span class="bn-ic">📤</span>SAP</div>
     <div class="bn-item" onclick="go('import')"><span class="bn-ic">📥</span>Import</div>
-    <div class="bn-item" onclick="go('sync')"><span class="bn-ic">🔄</span>Sync</div>
     <div class="bn-item" onclick="go('admin')"><span class="bn-ic">🛠️</span>Admin</div>
     <div class="bn-item" onclick="go('budget')"><span class="bn-ic">💰</span>Budget</div>
     <div class="bn-item" onclick="go('help')"><span class="bn-ic">📖</span>Guide</div>
