@@ -2147,40 +2147,40 @@ function doAmortRun(mode){
     }
     
     if(mode==='run'){
-      // Show schedule table — full width with toolbar
       document.getElementById('amSchedule').style.display='flex';
       document.getElementById('amSchedule').style.flexDirection='column';
       document.getElementById('amSchedule').style.flex='1';
       if(r.scheduleRows&&r.scheduleRows.length>0&&r.futurePeriods&&r.futurePeriods.length>0){
         var fp=r.futurePeriods;
-        // Store data for client-side interactions
         _amSchedData = { headers: ['Company','Plate','IO','GL','Description','Start','End','Amount','Days','Cur Period','Accum','Remain'], futurePeriods: fp, rows: r.scheduleRows };
         _amWideData = r.wideFormat || null;
         _amRunningBalance = r.runningBalance || [];
         var total= r.scheduleRows.length;
+        var wideTotal = _amWideData&&_amWideData.rows?_amWideData.rows.length:0;
         
-        // Tab buttons
-        var tabsHtml='<div class="btn-row" style="margin-bottom:8px">' +
-          '<button class="btn btn-pri btn-sm" id="amTabList" onclick="switchAmortView(\'list\')">📋 List</button>' +
-          '<button class="btn btn-ghost btn-sm" id="amTabWide" onclick="switchAmortView(\'wide\')">📐 Wide</button>' +
-          '</div>';
-        
-        // List view toolbar
-        var tbHtml='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
-          tabsHtml +
-          '<span style="font-size:11px;color:var(--mt);font-weight:500">📅 '+total+' items</span>' +
-          '<input class="fi" id="amSchedSearch" placeholder="Search..." oninput="amSchedFilter()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
+        // Shared toolbar (above both cards, always visible)
+        var sharedTbHtml='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
+          '<div class="btn-row" style="margin:0">' +
+            '<button class="btn btn-pri btn-sm" id="amTabList" onclick="switchAmortView(\'list\')">📋 List</button>' +
+            '<button class="btn btn-ghost btn-sm" id="amTabWide" onclick="switchAmortView(\'wide\')">📐 Wide</button>' +
+          '</div>' +
+          '<input class="fi" id="amSchedSearch" placeholder="🔍 Search..." oninput="amSchedFilter()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
           '<button class="btn btn-gn btn-sm" onclick="exportAmortFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
           '<button class="btn btn-bl btn-sm" onclick="exportAmortMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
           '<button class="btn btn-pri btn-sm" onclick="exportAmortThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
           '<div style="flex:1;min-width:5px"></div>' +
-          '<select class="sel" id="amSchedPageSize" onchange="amSchedRender()" style="min-width:60px;font-size:11px;padding:4px 5px">' +
-            '<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option>' +
-          '</select>' +
           '<button class="btn btn-ghost btn-sm" onclick="window.print()" title="Print"><i class="bi bi-printer"></i> Print</button>' +
         '</div>';
-        // List table
-        var schHtml='<div class="card" id="amListView" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">'+tbHtml+
+        
+        // List view card
+        var schHtml='<div class="card" id="amListView" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">' +
+            '<span style="font-size:11px;color:var(--mt);font-weight:500">📅 '+total+' items</span>' +
+            '<div style="flex:1;min-width:5px"></div>' +
+            '<select class="sel" id="amSchedPageSize" onchange="amSchedRender()" style="min-width:60px;font-size:11px;padding:4px 5px">' +
+              '<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option>' +
+            '</select>' +
+          '</div>' +
           '<div id="amSchedPagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:11px;margin-bottom:4px"></div>'+
           '<div class="tw" style="flex:1;overflow:auto;min-height:200px;width:100%"><table class="tb" style="width:100%" id="amSchedTable"><thead><tr>'+
           '<th>Company</th><th>Plate</th><th>IO</th><th>GL</th><th>Description</th><th>Start</th><th>End</th><th class="num">Amount</th><th class="num">Days</th>'+
@@ -2188,38 +2188,42 @@ function doAmortRun(mode){
         fp.forEach(function(p){schHtml+='<th class="num" style="color:var(--bl);font-size:10px">'+esc(p)+'</th>';});
         schHtml+='</tr></thead><tbody id="amSchedBody"></tbody></table></div></div>';
         
-        // Wide format view (hidden initially)
+        // Wide format view (hidden initially) with pagination
         var wideHtml='<div class="card" id="amWideView" style="display:none;flex-direction:column;flex:1;min-height:0;width:100%;padding:14px 16px">' +
-          '<div style="font-size:11px;color:var(--mt);font-weight:500;margin-bottom:8px">📐 Wide Format — Months as Columns</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">' +
+            '<span style="font-size:11px;color:var(--mt);font-weight:500">📐 Wide Format — Months as Columns ('+wideTotal+' items)</span>' +
+            '<div style="flex:1;min-width:5px"></div>' +
+            '<select class="sel" id="amWidePageSize" onchange="amWideRender()" style="min-width:70px;font-size:11px;padding:4px 5px">' +
+              '<option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option>' +
+            '</select>' +
+          '</div>' +
+          '<div id="amWidePagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:11px;margin-bottom:4px"></div>' +
           '<div class="tw" style="flex:1;overflow:auto;min-height:200px;width:100%">' +
           '<table class="tb" style="width:100%"><thead id="amWideHead"></thead><tbody id="amWideBody"></tbody></table></div></div>';
         
-        // Running Balance
+        // Running Balance with pagination
         var rbHtml='';
         if(_amRunningBalance.length>0){
           rbHtml='<div class="card" id="amRunningBalanceCard">' +
             '<h3 style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAmortRB()">' +
-            '<span>📊 Running Balance</span><span id="amRbToggle" style="font-size:12px;color:var(--mt)">▶</span></h3>' +
+            '<span>📊 Running Balance ('+_amRunningBalance.length+' items)</span><span id="amRbToggle" style="font-size:12px;color:var(--mt)">▶</span></h3>' +
             '<div id="amRbBody" style="display:none">' +
+            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;justify-content:flex-end">' +
+              '<select class="sel" id="amRBPageSize" onchange="amRBRender()" style="min-width:70px;font-size:11px;padding:4px 5px">' +
+                '<option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option>' +
+              '</select>' +
+            '</div>' +
+            '<div id="amRBPagination" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:11px;margin-bottom:4px"></div>' +
             '<div class="tw" style="max-height:400px;overflow:auto">' +
             '<table class="tb"><thead><tr><th>Doc No</th><th>Description</th><th>Start-End</th><th class="num">Amount</th><th class="num">Amortized</th><th class="num">Remaining</th><th class="num">% Consumed</th></tr></thead>' +
-            '<tbody>' + _amRunningBalance.map(function(rb){
-              var cls=rb.consumedPct>=90?'gn':rb.consumedPct>=70?'gold':'';
-              return '<tr><td style="font-family:JetBrains Mono,mono;font-size:10px">'+esc(rb.docNo)+'</td>'+
-                '<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(rb.description||'')+'</td>'+
-                '<td style="font-family:JetBrains Mono,mono;font-size:10px">'+(typeof rb.startDate==='object'?rb.startDate.toISOString().slice(0,10):String(rb.startDate).slice(0,10))+' – '+(typeof rb.endDate==='object'?rb.endDate.toISOString().slice(0,10):String(rb.endDate).slice(0,10))+'</td>'+
-                '<td class="num" style="font-size:10px">฿'+fmt(rb.amount)+'</td>'+
-                '<td class="num" style="font-size:10px">฿'+fmt(rb.amortized)+'</td>'+
-                '<td class="num" style="font-size:10px">฿'+fmt(rb.remaining)+'</td>'+
-                '<td class="num" style="font-size:10px;color:var(--'+cls+')">'+rb.consumedPct+'%</td></tr>';
-            }).join('') +
-            '</tbody></table></div></div></div>';
+            '<tbody id="amRBBody"></tbody></table></div></div></div>';
         }
         
-        document.getElementById('amSchedule').innerHTML=schHtml+wideHtml+rbHtml;
-        _amSchedPage=0;
+        document.getElementById('amSchedule').innerHTML=sharedTbHtml+schHtml+wideHtml+rbHtml;
+        _amSchedPage=0; _amWidePage=0; _amRBPage=0;
         amSchedRender();
-        if(_amWideData) renderAmortWide();
+        if(_amWideData) amWideRender();
+        if(_amRunningBalance.length) amRBRender();
       }else{
         document.getElementById('amSchedule').innerHTML='<div class="al al-er">No data for this period</div>';
       }
@@ -2235,6 +2239,8 @@ function doAmortRun(mode){
 // Amortization variables & helpers
 var _amSchedData=null, _amSchedPage=0;
 var _amWideData=null, _amRunningBalance=[];
+var _amWidePage=0, _amWidePageSize=50;
+var _amRBPage=0, _amRBPageSize=50;
 
 function switchAmortView(view){
   var lv=document.getElementById('amListView');
@@ -2255,25 +2261,78 @@ function toggleAmortRB(){
   var o=b.style.display!=='none';
   b.style.display=o?'none':'block';
   if(t) t.textContent=o?'▶':'▼';
+  if(!o && b.getAttribute('data-rendered')!=='1'){
+    amRBRender();
+    b.setAttribute('data-rendered','1');
+  }
 }
 
-function renderAmortWide(){
+function amWideRender(){
   if(!_amWideData||!_amWideData.rows||!_amWideData.rows.length) return;
   var head=document.getElementById('amWideHead');
   var body=document.getElementById('amWideBody');
   if(!head||!body) return;
+  var rows=_amWideData.rows;
+  var ps=parseInt(document.getElementById('amWidePageSize').value)||50;
+  var totalPages=Math.max(1,Math.ceil(rows.length/ps));
+  if(_amWidePage>=totalPages)_amWidePage=0;
+  var start=_amWidePage*ps;
+  var pageRows=rows.slice(start,start+ps);
   // Render headers
   var hHtml='<tr>';
   _amWideData.headers.forEach(function(h){hHtml+='<th>'+esc(h)+'</th>';});
   hHtml+='</tr>';
   head.innerHTML=hHtml;
   // Render rows
-  body.innerHTML=_amWideData.rows.map(function(row){
+  body.innerHTML=pageRows.map(function(row){
     return '<tr>'+row.map(function(v){
       if(typeof v==='number') return '<td class="num" style="font-size:10px">'+fmt(v)+'</td>';
       return '<td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc(String(v))+'</td>';
     }).join('')+'</tr>';
   }).join('');
+  // Pagination
+  document.getElementById('amWidePagination').innerHTML=
+    '<span style="color:var(--mt);font-size:10px">'+(start+1)+'–'+Math.min(start+ps,rows.length)+' of '+rows.length+'</span>'+
+    '<div class="btn-row" style="gap:3px">'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amWidePage=0;amWideRender()" '+(start===0?'disabled':'')+'>⏮</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amWidePage=Math.max(0,_amWidePage-1);amWideRender()" '+(start===0?'disabled':'')+'>◀</button>'+
+    '<span style="font-size:11px;color:var(--mt);padding:0 6px;font-family:JetBrains Mono,mono">'+(_amWidePage+1)+'/'+totalPages+'</span>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amWidePage=Math.min(totalPages-1,_amWidePage+1);amWideRender()" '+(_amWidePage>=totalPages-1?'disabled':'')+'>▶</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amWidePage=totalPages-1;amWideRender()" '+(_amWidePage>=totalPages-1?'disabled':'')+'>⏭</button>'+
+    '</div>';
+}
+
+function amRBRender(){
+  if(!_amRunningBalance||!_amRunningBalance.length) return;
+  var body=document.getElementById('amRBBody');
+  if(!body) return;
+  var rows=_amRunningBalance;
+  var ps=parseInt(document.getElementById('amRBPageSize').value)||50;
+  var totalPages=Math.max(1,Math.ceil(rows.length/ps));
+  if(_amRBPage>=totalPages)_amRBPage=0;
+  var start=_amRBPage*ps;
+  var pageRows=rows.slice(start,start+ps);
+  
+  body.innerHTML=pageRows.map(function(rb){
+    var cls=rb.consumedPct>=90?'gn':rb.consumedPct>=70?'gold':'';
+    return '<tr><td style="font-family:JetBrains Mono,mono;font-size:10px">'+esc(rb.docNo)+'</td>'+
+      '<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(rb.description||'')+'</td>'+
+      '<td style="font-family:JetBrains Mono,mono;font-size:10px">'+(typeof rb.startDate==='object'?rb.startDate.toISOString().slice(0,10):String(rb.startDate).slice(0,10))+' – '+(typeof rb.endDate==='object'?rb.endDate.toISOString().slice(0,10):String(rb.endDate).slice(0,10))+'</td>'+
+      '<td class="num" style="font-size:10px">฿'+fmt(rb.amount)+'</td>'+
+      '<td class="num" style="font-size:10px">฿'+fmt(rb.amortized)+'</td>'+
+      '<td class="num" style="font-size:10px">฿'+fmt(rb.remaining)+'</td>'+
+      '<td class="num" style="font-size:10px;color:var(--'+cls+')">'+rb.consumedPct+'%</td></tr>';
+  }).join('');
+  
+  document.getElementById('amRBPagination').innerHTML=
+    '<span style="color:var(--mt);font-size:10px">'+(start+1)+'–'+Math.min(start+ps,rows.length)+' of '+rows.length+'</span>'+
+    '<div class="btn-row" style="gap:3px">'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amRBPage=0;amRBRender()" '+(start===0?'disabled':'')+'>⏮</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amRBPage=Math.max(0,_amRBPage-1);amRBRender()" '+(start===0?'disabled':'')+'>◀</button>'+
+    '<span style="font-size:11px;color:var(--mt);padding:0 6px;font-family:JetBrains Mono,mono">'+(_amRBPage+1)+'/'+totalPages+'</span>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amRBPage=Math.min(totalPages-1,_amRBPage+1);amRBRender()" '+(_amRBPage>=totalPages-1?'disabled':'')+'>▶</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="_amRBPage=totalPages-1;amRBRender()" '+(_amRBPage>=totalPages-1?'disabled':'')+'>⏭</button>'+
+    '</div>';
 }
 
 function clearAmort(){
