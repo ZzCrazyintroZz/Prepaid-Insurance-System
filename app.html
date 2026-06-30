@@ -835,9 +835,9 @@ var LazySectionLoader = (function() {
           '<button class="btn btn-pri btn-sm" onclick="loadWidePreview()"><i class="bi bi-eye"></i> Preview</button>' +
           '<input class="fi" id="wideSearch" placeholder="Search..." oninput="wideFilterTable()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
           '<div style="flex:1;min-width:5px"></div>' +
-          '<button class="btn btn-ghost btn-sm" onclick="exportFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
-          '<button class="btn btn-ghost btn-sm" onclick="exportMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
-          '<button class="btn btn-ghost btn-sm" onclick="exportThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
+          '<button class="btn btn-gn btn-sm" onclick="exportFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
+          '<button class="btn btn-bl btn-sm" onclick="exportMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
+          '<button class="btn btn-pri btn-sm" onclick="exportThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
           '<div class="fg" style="margin-bottom:0;flex-shrink:0"><label>&nbsp;</label><select class="sel" id="widePageSize" onchange="var v=parseInt(this.value);_widePageSize=v;_widePage=0;wideRenderTable()" style="min-width:72px;font-size:11px;padding:5px 6px">' +
               '<option value="50">50/page</option><option value="100" selected>100/page</option><option value="200">200/page</option>' +
             '</select></div>' +
@@ -2224,9 +2224,9 @@ function doAmortRun(mode){
                 var tbHtml='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;width:100%">' +
                   '<span style="font-size:11px;color:var(--mt);font-weight:500">📅 '+total+' items</span>' +
                   '<input class="fi" id="amSchedSearch" placeholder="Search..." oninput="amSchedFilter()" style="max-width:140px;font-size:11px;padding:5px 8px">' +
-                  '<button class="btn btn-ghost btn-sm" onclick="exportAmortFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
-                  '<button class="btn btn-ghost btn-sm" onclick="exportAmortMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
-                  '<button class="btn btn-ghost btn-sm" onclick="exportAmortThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
+                  '<button class="btn btn-gn btn-sm" onclick="exportAmortFullSchedule()" title="Export Full Schedule (Verify)"><i class="bi bi-download"></i> Full Schedule (Verify)</button>' +
+                  '<button class="btn btn-bl btn-sm" onclick="exportAmortMonthlyPivot()" title="Export Prepaid Monthly Pivot"><i class="bi bi-download"></i> Prepaid Monthly Pivot</button>' +
+                  '<button class="btn btn-pri btn-sm" onclick="exportAmortThisPeriod()" title="Export This Period"><i class="bi bi-download"></i> This Period</button>' +
                   '<div style="flex:1;min-width:5px"></div>' +
                   '<select class="sel" id="amSchedPageSize" onchange="amSchedRender()" style="min-width:60px;font-size:11px;padding:4px 5px">' +
                     '<option value="50">50</option><option value="100" selected>100</option><option value="200">200</option>' +
