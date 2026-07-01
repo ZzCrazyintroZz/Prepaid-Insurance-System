@@ -4581,7 +4581,7 @@ function amSchedRender(){
         if(typeof val==='number'){cls='num';val=fmt(val);}
         else val=esc(String(val||''));
 
-        if(ci>=14) cls='num';
+        if(ci>=14 && ci!==17) cls='num';
 
       }else{
 
