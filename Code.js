@@ -52,7 +52,9 @@ function batchGet(fns) {
           'getLastEditTimestamp': getLastEditTimestamp,
           'exportFullSchedule': exportFullSchedule,
           'exportMonthlyPivot': exportMonthlyPivot,
-          'exportThisPeriod': exportThisPeriod
+          'exportThisPeriod': exportThisPeriod,
+          'exportRunningBalance': exportRunningBalance,
+          'getAllPeriodStatuses': getAllPeriodStatuses
         };
         
         var fn = allowedFunctions[fnName];

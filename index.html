@@ -127,7 +127,18 @@
     .bn-item.on,.bn-item:hover{color:var(--gold)}
     .bn-ic{font-size:18px;line-height:1}
     /* ===== RESPONSIVE ===== */
-    @media(max-width:1024px){:root{--nav:196px}.chart-grid{grid-template-columns:1fr 1fr}.g4{grid-template-columns:repeat(2,1fr)}.g5{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:1280px){
+      #ct{padding:16px}
+      .hero{padding:22px 24px 20px}
+    }
+    @media(max-width:1024px){
+      :root{--nav:180px}
+      .chart-grid{grid-template-columns:1fr 1fr}
+      .g4{grid-template-columns:repeat(2,1fr)}
+      .g5{grid-template-columns:repeat(3,1fr)}
+      #ct{padding:14px}
+      .card{padding:16px}
+    }
     @media(max-width:768px){
       :root{--nav:0px;--hh:50px}
       nav{display:none;position:fixed;top:var(--hh);left:0;bottom:60px;width:260px;z-index:200;background:var(--sf);border-right:1px solid var(--bdr);padding:12px 6px;box-shadow:4px 0 24px rgba(0,0,0,.4)}
@@ -142,11 +153,26 @@
       .g4-chart{grid-template-columns:1fr;gap:12px}
       .bottom-nav{display:block}
       .kpi-grid{grid-template-columns:1fr 1fr;gap:8px}
-      .hero{padding:20px 18px 16px}
+      .hero{padding:20px 18px 16px;flex-wrap:wrap;gap:12px}
       .hero-val{font-size:26px}
-      #expiryBuckets{display:none}
+      #expiryBuckets{text-align:left!important;width:100%}
+      #expiryBuckets>div{justify-content:flex-start!important}
       .ni{min-height:44px}
       .btn{min-height:38px}
+      .card{padding:14px}
+      .card h3{margin-bottom:10px}
+      .tb{font-size:10px}
+      .tb th,.tb td{padding:4px 6px}
+      .ph{margin-bottom:14px}
+      .pt{font-size:22px}
+      .chart-wrap{height:200px}
+      .chart-wrap-sm{height:160px}
+      .fg{grid-template-columns:1fr!important;gap:4px 10px}
+      .fg label{font-size:10px}
+      .fi,.sel{font-size:11px;max-width:100%!important;width:100%;min-height:36px}
+      .pagination{flex-wrap:wrap;gap:6px}
+      .pagination .pag-range{margin-left:0;width:100%}
+      #crudModal,#crudDeleteModal,#drillPanel{width:96%!important;max-width:none!important;top:5%!important}
     }
     @media(max-width:768px) and (orientation:landscape){
       :root{--hh:42px}
@@ -159,9 +185,56 @@
       #ct{padding:10px;padding-bottom:70px!important}
       .h-name{font-size:13px}
       .h-sub{display:none}
-      .kpi-grid{grid-template-columns:1fr 1fr;gap:7px}
+      .kpi-grid{grid-template-columns:1fr;gap:7px}
       .hero{padding:16px 14px 14px}
       .hero-val{font-size:22px}
+      .card{padding:12px}
+      .tb{font-size:9px}
+      .tb th,.tb td{padding:3px 4px}
+      .pt{font-size:18px}
+      .ph{margin-bottom:10px}
+      .hero-label{font-size:9px}
+      .hero-sub{font-size:10px}
+      .chip{padding:2px 7px;font-size:9px;min-height:32px}
+      .kv{font-size:16px}
+      .kl{font-size:8px}
+      .ks{font-size:9px}
+      .btn{padding:6px 10px;font-size:11px}
+      .btn-sm{padding:4px 8px;font-size:10px}
+      .chart-wrap{height:170px}
+      .chart-wrap-sm{height:140px}
+      .kpi{padding:10px 12px}
+      .bn-item{min-width:48px;font-size:8px}
+      .bn-ic{font-size:16px}
+      .expiry-chip{padding:6px 8px!important;min-width:40px!important}
+      .expiry-chip .ec-val{font-size:14px!important}
+      .result-box{padding:10px}
+      #crudModal,#crudDeleteModal,#drillPanel{width:100%!important;top:2%!important;border-radius:6px!important;max-height:90vh!important}
+      .toast-container{right:8px;top:8px}
+      .toast{min-width:180px;font-size:11px;padding:8px 10px}
+      .cbox{padding:10px 11px}
+      .cbox h4{font-size:9px}
+      .kv-sm{font-size:14px}
+      .pag-info{font-size:11px}
+      .al{padding:8px 10px;font-size:11px}
+      .btn-row{gap:6px}
+    }
+    @media(max-width:360px){
+      :root{--hh:46px}
+      header{padding:0 8px;gap:4px}
+      #ct{padding:8px;padding-bottom:70px!important}
+      .h-name{font-size:12px}
+      .kpi-grid{grid-template-columns:1fr}
+      .g5,.g4{grid-template-columns:1fr 1fr;gap:5px}
+      .hero{padding:12px 10px 12px}
+      .hero-val{font-size:18px}
+      .card{padding:10px}
+      .tb{font-size:8px}
+      .tb th,.tb td{padding:2px 3px}
+      .bn-item{min-width:40px;font-size:7px;padding:5px 3px}
+      .bn-ic{font-size:14px}
+      .fi,.sel{font-size:10px;min-height:32px;padding:5px 8px}
+      .btn{font-size:10px;padding:5px 8px;min-height:32px}
     }
     @media print{nav,header,#toast,.bottom-nav,.btn{display:none!important}#ct,#main,#app,body{overflow:visible!important}}
   </style>
@@ -190,26 +263,25 @@
 <div id="main">
   <!-- ===== LEFT SIDEBAR ===== -->
   <nav>
-    <div class="ng">Main Menu</div>
     <div class="ni on" id="nav-dashboard" onclick="go('dashboard')"><span class="ic">◈</span>Dashboard</div>
+    <div class="ng">Data</div>
     <div class="ni" id="nav-amort" onclick="go('amort')"><span class="ic">🚀</span>Amortization</div>
     <div class="ni" id="nav-crud" onclick="go('crud')"><span class="ic">✏️</span>Prepaid</div>
     <div class="ni" id="nav-budget" onclick="go('budget')"><span class="ic">💰</span>Budget</div>
-    <div class="ng">Data</div>
-    <div class="ni" id="nav-sync" onclick="go('sync')"><span class="ic">🔄</span>Sync Data</div>
-    <div class="ni" id="nav-import" onclick="go('import')"><span class="ic">📥</span>Import</div>
-    <div class="ni" id="nav-sap" onclick="go('sap')"><span class="ic">📤</span>SAP Generator</div>
-    <div class="ni" id="nav-checker" onclick="go('checker')"><span class="ic">🔍</span>Checker</div>
     <div class="ni" id="nav-void" onclick="go('void')"><span class="ic">⛔</span>Void</div>
+    <div class="ni" id="nav-import" onclick="go('import')"><span class="ic">📥</span>Import</div>
+    <div class="ni" id="nav-checker" onclick="go('checker')"><span class="ic">🔍</span>Checker</div>
+    <div class="ng">SAP</div>
+    <div class="ni" id="nav-sap" onclick="go('sap')"><span class="ic">📤</span>SAP Generator</div>
+    <div class="ni" id="nav-settings" onclick="go('settings')"><span class="ic">⚙️</span>SAP Config</div>
     <div class="ng">Close &amp; Approve</div>
     <div class="ni" id="nav-periodclose" onclick="go('periodclose')"><span class="ic">🔒</span>Period-Close</div>
     <div class="ni" id="nav-approvals" onclick="go('approvals')"><span class="ic">✅</span>Approvals</div>
-    <div class="ni" id="nav-glrecon" onclick="go('glrecon')"><span class="ic">📊</span>GL Recon</div>
+    <div class="ni" id="nav-glrecon" onclick="go('glrecon')"><span class="ic">📊</span>GL Reconciliation</div>
     <div class="ng">System</div>
-    <div class="ni" id="nav-settings" onclick="go('settings')"><span class="ic">⚙️</span>Settings</div>
-    <div class="ni" id="nav-admin" onclick="go('admin')"><span class="ic">🛠️</span>Admin Console</div>
     <div class="ni" id="nav-audit" onclick="go('audit')"><span class="ic">📋</span>Audit Log</div>
     <div class="ni" id="nav-help" onclick="go('help')"><span class="ic">📖</span>User Guide</div>
+    <div class="ni" id="nav-admin" onclick="go('admin')"><span class="ic">🛠️</span>Admin Console</div>
   </nav>
 
   <!-- ===== MOBILE OVERLAY ===== -->
@@ -272,6 +344,31 @@
             <span class="kv-sm" id="dHealthScore" style="font-size:16px">—</span>
           </div>
           <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="dHealthBar" style="width:0%;background:var(--gn)"></div></div>
+        </div>
+      </div>
+
+      <!-- Period Status: Full Width -->
+      <div style="display:flex;flex-direction:column;width:100%;margin-bottom:12px;background:var(--card);border:1px solid var(--bdr);border-radius:var(--r)">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--bdr);background:var(--sf)">
+          <h3 style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.10em;color:var(--gold);display:flex;align-items:center;gap:6px;margin:0"><i class="bi bi-calendar-check"></i> Period Status</h3>
+          <div style="display:flex;gap:10px;font-size:9px;color:var(--mt)">
+            <span><span style="color:var(--gn)">●</span> Closed <span id="psClosed">—</span></span>
+            <span><span style="color:var(--gold)">●</span> Active <span id="psProgress">—</span></span>
+            <span><span style="color:var(--mt)">●</span> Open <span id="psPending">—</span></span>
+          </div>
+        </div>
+        <div class="tw" style="max-height:180px;overflow-y:auto;width:100%">
+          <table class="tb" style="font-size:10px;width:100%">
+            <thead>
+              <tr><th style="text-align:left;padding:5px 10px">Period</th><th style="text-align:center;padding:5px 6px">Chk</th><th style="text-align:center;padding:5px 6px">Am</th><th style="text-align:center;padding:5px 6px">SAP</th><th style="text-align:center;padding:5px 6px">Void</th><th style="text-align:center;padding:5px 10px">Close</th><th style="padding:5px 10px">Status</th></tr>
+            </thead>
+            <tbody id="psBody">
+              <tr><td colspan="7" style="text-align:center;color:var(--mt);padding:10px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:8px;color:var(--mt);border-top:1px solid var(--bdr);padding:5px 14px;display:flex;gap:14px;background:var(--sf)">
+          <span>💡 คลิก Period → Period-Close</span>
         </div>
       </div>
 
@@ -351,11 +448,10 @@
     <div class="bn-item on" onclick="go('dashboard')"><span class="bn-ic">◈</span>Dash</div>
     <div class="bn-item" onclick="go('amort')"><span class="bn-ic">🚀</span>Amort</div>
     <div class="bn-item" onclick="go('sap')"><span class="bn-ic">📤</span>SAP</div>
-    <div class="bn-item" onclick="go('sync')"><span class="bn-ic">🔄</span>Sync</div>
     <div class="bn-item" onclick="go('import')"><span class="bn-ic">📥</span>Import</div>
     <div class="bn-item" onclick="go('admin')"><span class="bn-ic">🛠️</span>Admin</div>
     <div class="bn-item" onclick="go('budget')"><span class="bn-ic">💰</span>Budget</div>
-    <div class="bn-item" onclick="go('settings')"><span class="bn-ic">⚙️</span>Settings</div>
+    <div class="bn-item" onclick="go('help')"><span class="bn-ic">📖</span>Guide</div>
   </div>
 </div>
 </div><!-- /#app -->
