@@ -4136,7 +4136,7 @@ function doAmortRun(mode){
 
         var fp=r.futurePeriods;
 
-        _amSchedData = { headers: ['Company','Plate','IO','GL','Description','Start','End','Amount','Days','Cur Period','Accum','Remain'], futurePeriods: fp, rows: r.scheduleRows };
+        _amSchedData = { headers: ['Company','Posting Date','Doc Date','Doc No','Document No','Description','Plate','IO','GL','GL-Name','Cost Center','Cost-Name','Start','End','Amount','Days','Rate/Day','Period','Days','Amort','Accum','Remain','RemainExp'], futurePeriods: fp, rows: r.scheduleRows };
 
         _amWideData = r.wideFormat || null;
 
@@ -4198,9 +4198,7 @@ function doAmortRun(mode){
 
           '<div class="tw" style="flex:1;overflow:auto;min-height:200px;width:100%"><table class="tb" style="width:100%" id="amSchedTable"><thead><tr>'+
 
-          '<th>Company</th><th>Plate</th><th>IO</th><th>GL</th><th>Description</th><th>Start</th><th>End</th><th class="num">Amount</th><th class="num">Days</th>'+
-
-          '<th class="num">Cur Period</th><th class="num">Accum</th><th class="num">Remain</th>';
+          '<th>Company</th><th>Posting Date</th><th>Doc Date</th><th>Doc No</th><th>Document No</th><th>Description</th><th>Plate</th><th>IO</th><th>GL</th><th>GL-Name</th><th>Cost Center</th><th>Cost-Name</th><th>Start</th><th>End</th><th class="num">Amount</th><th class="num">Days</th><th class="num">Rate/Day</th><th>Period</th><th class="num">Days</th><th class="num">Amort</th><th class="num">Accum</th><th class="num">Remain</th><th class="num">RemainExp</th>';
 
         fp.forEach(function(p){schHtml+='<th class="num" style="color:var(--bl);font-size:10px">'+esc(p)+'</th>';});
 
@@ -4554,13 +4552,13 @@ function amSchedRender(){
 
   var pageRows=_amSchedData.rows.slice(start,start+ps);
 
-  var base=12; // 12 base columns before future periods
+  var base=23; // 23 base columns before future periods
 
   // Build column range (all columns — removed basic toggle)
 
   var cols=[];
 
-  var totalCols=12+(_amSchedData.futurePeriods?Object.keys(_amSchedData.futurePeriods).length:0);
+  var totalCols=23+(_amSchedData.futurePeriods?Object.keys(_amSchedData.futurePeriods).length:0);
 
   for(var ci=0;ci<totalCols;ci++) cols.push(ci);
 
@@ -4574,23 +4572,22 @@ function amSchedRender(){
 
       var val, cls='', style='';
 
-      if(ci<12){
+      if(ci<23){
 
-        var flds=['company','plate','io','gl','description','startDate','endDate','amount','totalDays','curAmort','curAccum','curRemain'];
+        var flds=['company','postingDate','docDate','docNo','docNo2','description','plate','io','gl','glName','costCenter','costName','startDate','endDate','amount','totalDays','ratePerDay','curPeriod','curDays','curAmort','curAccum','curRemain','remainingPeriodExpense'];
 
         val=sr[flds[ci]];
 
         if(typeof val==='number'){cls='num';val=fmt(val);}
-
         else val=esc(String(val||''));
 
-        if(ci>=7) cls='num';
+        if(ci>=14) cls='num';
 
       }else{
 
-        var pIdx=ci-12;
+        var pIdx=ci-23;
 
-        var keys=Object.keys(_amSchedData.futurePeriods);
+        var keys=_amSchedData.futurePeriods;
 
         if(pIdx<keys.length){
 

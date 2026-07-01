@@ -238,8 +238,9 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
       
       amortMap[it.docNo + '_' + i] = {
         docNo: it.docNo, docNo2: it.docNo2 || '', description: it.description,
+        postingDate: it.postingDate || '', docDate: it.docDate || '',
         plate: it.plate || '', io: it.io || '', gl: it.glPrepaid || '', glName: it.glName || '',
-        costCenter: it.costCenter || '', company: it.company || '',
+        costCenter: it.costCenter || '', costName: it.costName || '', company: it.company || '',
         startDate: it.startDate, endDate: it.endDate, amount: Number(it.amount) || 0,
         curPeriod: curRow.period, curDays: curRow.daysInMonth, curRate: curRow.amortAmount / (curRow.daysInMonth || 1),
         curAmort: curRow.amortAmount, curAccum: curRow.accumulated, curRemain: curRow.remaining,
@@ -270,7 +271,9 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
       });
       return {
         company: a.company, plate: a.plate, io: a.io,
-        gl: a.gl, glName: a.glName, costCenter: a.costCenter,
+        gl: a.gl, glName: a.glName, costCenter: a.costCenter, costName: a.costName,
+        postingDate: a.postingDate, docDate: a.docDate,
+        docNo: a.docNo, docNo2: a.docNo2,
         description: a.description,
         startDate: typeof a.startDate === 'object' ? a.startDate.toISOString().slice(0,10) : String(a.startDate).slice(0,10),
         endDate: typeof a.endDate === 'object' ? a.endDate.toISOString().slice(0,10) : String(a.endDate).slice(0,10),
@@ -278,6 +281,7 @@ function runAmortizationFull(period, company, roundRate, glPrepaid, linesPerJe) 
         totalDays: a.totalDays, ratePerDay: a.curRate,
         curPeriod: a.curPeriod, curDays: a.curDays,
         curAmort: a.curAmort, curAccum: a.curAccum, curRemain: a.curRemain,
+        remainingPeriodExpense: Math.round(a.curRemain / (Object.keys(fp).length || 1) * 100) / 100, // curRemain / remaining months — verification value
         futurePeriods: fp
       };
     });
